@@ -28,12 +28,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node 24
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: server/package-lock.json
+          node-version: "24"
+
+      - name: Show runtime versions
+        run: |
+          node --version
+          npm --version
 
       - name: Install dependencies
         run: npm install
@@ -41,7 +44,27 @@ jobs:
       - name: JavaScript syntax check
         run: npm run check
 
-      - name: Deploy Worker + Durable Object
+      - name: Validate Cloudflare secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "Missing GitHub secret: CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+
+          if [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "Missing GitHub secret: CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+
+          echo "Cloudflare secrets detected."
+
+      - name: Deploy Worker + Durable Objects
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
