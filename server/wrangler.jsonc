@@ -12,15 +12,21 @@
       {
         "name": "TERMINALS",
         "class_name": "TerminalRoom"
+      },
+      {
+        "name": "NETWORK",
+        "class_name": "NetworkRegistry"
       }
     ]
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": [
-        "TerminalRoom"
-      ]
+      "new_sqlite_classes": ["TerminalRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["NetworkRegistry"]
     }
   ]
 }

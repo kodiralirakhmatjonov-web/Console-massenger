@@ -1,37 +1,34 @@
-# Console Realtime Server
+# Console Server — First Version Alpha
 
-Cloudflare Worker + one Durable Object instance per Terminal.
+Cloudflare Worker + Durable Objects.
 
-## Routes
+## What works
 
-- `GET /health`
-- `GET /v1/terminals/:terminalId/history?limit=50`
-- `GET /v1/terminals/:terminalId/socket?node=:nodeId` with WebSocket upgrade
+- identity directory (`@handle` + stable Node ID);
+- Node search;
+- incoming/outgoing Handshake requests;
+- accept/reject Handshake;
+- 1:1 Terminal creation;
+- membership enforcement before history/WebSocket access;
+- realtime WebSocket fan-out;
+- optimistic client messages + server ACK;
+- message deduplication by `client_id`;
+- durable message history.
 
-## Message frame
+## Security status
 
-The realtime transport currently accepts only ciphertext payloads:
+This is an **internal alpha transport**, not a production secure messenger.
 
-```json
-{
-  "type": "message",
-  "client_id": "01H...",
-  "sender_node": "node_A1B2C3D4",
-  "ciphertext": "base64-or-protocol-envelope"
-}
-```
+The Identity signing key is local on iOS, but request authentication and audited E2EE are intentionally not claimed in this version. Message content is currently visible to the server.
 
-Fields such as `plaintext`, `text`, and `body` are explicitly rejected.
+Before any public privacy/security claim we must add:
 
-This is a transport invariant only. It does **not** claim that Console E2EE is complete yet.
-The cryptographic protocol and authenticated Identity-to-device binding remain separate phases.
+1. cryptographic request authentication;
+2. device binding;
+3. audited E2EE protocol (not custom crypto);
+4. replay protection;
+5. APNs privacy design;
+6. abuse/rate limiting;
+7. independent security review.
 
-## Delivery pipeline
-
-1. client optimistic render;
-2. WebSocket send;
-3. Durable Object persists ciphertext;
-4. sender receives `server_ack`;
-5. room fans out persisted frame to other active sockets.
-
-This order lets the client distinguish local/pending from server-persisted delivery.
+The UI explicitly reports that E2EE is not enabled.

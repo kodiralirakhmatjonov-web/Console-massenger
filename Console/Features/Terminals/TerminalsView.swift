@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TerminalsView: View {
     @EnvironmentObject private var session: ConsoleSession
+    let onOpenNetwork: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -9,17 +10,31 @@ struct TerminalsView: View {
                 ConsoleTheme.background.ignoresSafeArea()
 
                 ScrollView {
-                    LazyVStack(spacing: 10) {
-                        identityHeader
+                    LazyVStack(spacing: 12) {
+                        ConsoleHeader(
+                            path: "console://terminals",
+                            title: "ТЕРМИНАЛЫ",
+                            trailing: String(format: "%02d", session.terminals.count)
+                        )
+                        .padding(.bottom, 14)
 
-                        ForEach(session.terminals) { terminal in
-                            NavigationLink(value: terminal) {
-                                terminalRow(terminal)
+                        if session.terminals.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(session.terminals) { terminal in
+                                NavigationLink(value: terminal) {
+                                    terminalRow(terminal)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 20)
+                    .padding(.bottom, 32)
+                }
+                .refreshable {
+                    await session.refreshNetwork()
                 }
             }
             .navigationDestination(for: TerminalSummary.self) { terminal in
@@ -29,60 +44,54 @@ struct TerminalsView: View {
         }
     }
 
-    private var identityHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("console://network")
-                .font(ConsoleTheme.monoSmall)
-                .foregroundStyle(ConsoleTheme.accent)
+    private var emptyState: some View {
+        ConsoleCard {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("РЕЗУЛЬТАТОВ: 0")
+                    .font(.console(11, weight: .bold))
+                    .foregroundStyle(ConsoleTheme.accent)
 
-            Text("ТЕРМИНАЛЫ")
-                .font(.system(size: 34, weight: .black, design: .monospaced))
-                .foregroundStyle(ConsoleTheme.text)
+                Text("АКТИВНЫХ ТЕРМИНАЛОВ НЕТ")
+                    .font(.console(17, weight: .black))
+                    .foregroundStyle(ConsoleTheme.text)
 
-            if let identity = session.identity {
-                Text("\(identity.nodeID)  \(identity.fingerprint)")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(ConsoleTheme.muted)
-                    .lineLimit(1)
+                Text("Найдите узел в Network и инициируйте Handshake. Терминал появится только после подтверждения второй стороны.")
+                    .font(.console(12))
+                    .foregroundStyle(ConsoleTheme.secondary)
+                    .lineSpacing(4)
+
+                Button(action: onOpenNetwork) {
+                    Text("ОТКРЫТЬ NETWORK  →")
+                        .font(.console(11, weight: .bold))
+                        .foregroundStyle(ConsoleTheme.accent)
+                }
+                .buttonStyle(.plain)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, 18)
     }
 
     private func terminalRow(_ terminal: TerminalSummary) -> some View {
-        HStack(spacing: 14) {
-            Circle()
-                .fill(terminal.connected ? ConsoleTheme.accent : ConsoleTheme.muted)
-                .frame(width: 8, height: 8)
+        ConsoleCard {
+            HStack(spacing: 14) {
+                ConsoleStatusDot(active: true)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(terminal.node)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundStyle(ConsoleTheme.text)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("@\(terminal.peer.handle)")
+                        .font(.console(15, weight: .bold))
+                        .foregroundStyle(ConsoleTheme.text)
 
-                Text(terminal.preview)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    Text(terminal.peer.nodeID)
+                        .font(.console(9, weight: .medium))
+                        .foregroundStyle(ConsoleTheme.muted)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(ConsoleTheme.muted)
             }
-
-            Spacer()
-
-            if terminal.unread > 0 {
-                Text(String(terminal.unread))
-                    .font(.system(size: 11, weight: .black, design: .monospaced))
-                    .foregroundStyle(.black)
-                    .frame(width: 24, height: 24)
-                    .background(ConsoleTheme.accent)
-                    .clipShape(Circle())
-            }
         }
-        .padding(16)
-        .background(ConsoleTheme.surface)
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(ConsoleTheme.line, lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }

@@ -6,6 +6,7 @@ final class IdentityStore {
     private let service = "com.iumrah.beta.console.identity"
     private let privateKeyAccount = "ed25519-private-key"
     private let metadataAccount = "identity-metadata"
+    private let profileKey = "console.profile"
 
     func createIdentity() throws -> ConsoleIdentity {
         let privateKey = Curve25519.Signing.PrivateKey()
@@ -13,7 +14,7 @@ final class IdentityStore {
         let digest = SHA256.hash(data: publicKey)
 
         let hex = digest.map { String(format: "%02X", $0) }.joined()
-        let nodeID = "node_" + String(hex.prefix(8))
+        let nodeID = "node_" + String(hex.prefix(12))
         let fingerprint = stride(from: 0, to: min(hex.count, 32), by: 2)
             .map {
                 let start = hex.index(hex.startIndex, offsetBy: $0)
@@ -29,17 +30,27 @@ final class IdentityStore {
             createdAt: Date()
         )
 
-        try save(privateKey.rawRepresentation, account: privateKeyAccount)
-        try save(JSONEncoder().encode(identity), account: metadataAccount)
+        try saveKeychain(privateKey.rawRepresentation, account: privateKeyAccount)
+        try saveKeychain(JSONEncoder().encode(identity), account: metadataAccount)
         return identity
     }
 
     func loadIdentity() -> ConsoleIdentity? {
-        guard let data = read(account: metadataAccount) else { return nil }
+        guard let data = readKeychain(account: metadataAccount) else { return nil }
         return try? JSONDecoder().decode(ConsoleIdentity.self, from: data)
     }
 
-    private func save(_ data: Data, account: String) throws {
+    func saveProfile(_ profile: ConsoleProfile) throws {
+        let data = try JSONEncoder().encode(profile)
+        UserDefaults.standard.set(data, forKey: profileKey)
+    }
+
+    func loadProfile() -> ConsoleProfile? {
+        guard let data = UserDefaults.standard.data(forKey: profileKey) else { return nil }
+        return try? JSONDecoder().decode(ConsoleProfile.self, from: data)
+    }
+
+    private func saveKeychain(_ data: Data, account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -58,7 +69,7 @@ final class IdentityStore {
         }
     }
 
-    private func read(account: String) -> Data? {
+    private func readKeychain(account: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

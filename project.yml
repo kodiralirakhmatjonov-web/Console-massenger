@@ -21,6 +21,7 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Console
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_CONSOLE_SERVER_URL: ""
         CODE_SIGN_STYLE: Automatic
     scheme:
       testTargets: []

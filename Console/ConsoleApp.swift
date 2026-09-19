@@ -6,7 +6,7 @@ struct ConsoleApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            ConsoleRootView()
                 .environmentObject(session)
                 .preferredColorScheme(.dark)
         }
