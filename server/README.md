@@ -1,46 +1,37 @@
-# Console Network v0.1
+# Console Realtime Server
 
-Realtime transport foundation for Console.
+Cloudflare Worker + one Durable Object instance per Terminal.
 
-## What it does now
+## Routes
 
-- Cloudflare Worker routes each terminal to a named Durable Object.
-- Durable Object uses the WebSocket Hibernation API.
-- Each terminal has SQLite-backed Durable Object storage.
-- Server only accepts opaque `ciphertext` frames; no plaintext message field exists in the protocol.
-- Frames are persisted before the sender receives `ack: persisted`.
-- Persisted frames are fanned out to other live WebSocket clients in the same terminal.
-- `/history` returns opaque encrypted frames for later client-side decryption.
+- `GET /health`
+- `GET /v1/terminals/:terminalId/history?limit=50`
+- `GET /v1/terminals/:terminalId/socket?node=:nodeId` with WebSocket upgrade
 
-## Important security boundary
+## Message frame
 
-This is a transport foundation, **not production authentication or E2EE**.
+The realtime transport currently accepts only ciphertext payloads:
 
-The `node` query parameter is not authenticated yet. Do not treat it as proof of Identity. Before public deployment, Console still needs challenge-response authentication, membership authorization, Handshake state enforcement, replay protection, rate limits, and the final E2EE protocol.
-
-## Local commands
-
-```bash
-npm install
-npm run check
-npx wrangler dev
+```json
+{
+  "type": "message",
+  "client_id": "01H...",
+  "sender_node": "node_A1B2C3D4",
+  "ciphertext": "base64-or-protocol-envelope"
+}
 ```
 
-Health endpoint:
+Fields such as `plaintext`, `text`, and `body` are explicitly rejected.
 
-```text
-GET /health
-```
+This is a transport invariant only. It does **not** claim that Console E2EE is complete yet.
+The cryptographic protocol and authenticated Identity-to-device binding remain separate phases.
 
-Realtime endpoint:
+## Delivery pipeline
 
-```text
-GET /v1/terminal/:terminalId/socket?node=:nodeId
-Upgrade: websocket
-```
+1. client optimistic render;
+2. WebSocket send;
+3. Durable Object persists ciphertext;
+4. sender receives `server_ack`;
+5. room fans out persisted frame to other active sockets.
 
-History endpoint:
-
-```text
-GET /v1/terminal/:terminalId/history?limit=50&before=<unix_ms>
-```
+This order lets the client distinguish local/pending from server-persisted delivery.
