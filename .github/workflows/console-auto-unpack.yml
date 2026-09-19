@@ -1,0 +1,214 @@
+name: Console — Auto Unpack Update
+
+on:
+  push:
+    paths:
+      - 'console-update*.zip'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: console-unpack-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  unpack:
+    # Prevent the bot's own cleanup commit from starting the workflow again.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Locate update ZIP
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t zips < <(find . -maxdepth 1 -type f -name 'console-update*.zip' -printf '%f\n' | sort)
+
+          if [ "${#zips[@]}" -eq 0 ]; then
+            echo "No console-update*.zip found in repository root."
+            exit 1
+          fi
+
+          if [ "${#zips[@]}" -gt 1 ]; then
+            echo "More than one update ZIP found:"
+            printf ' - %s\n' "${zips[@]}"
+            echo "Upload only one update ZIP at a time."
+            exit 1
+          fi
+
+          echo "zip=${zips[0]}" >> "$GITHUB_OUTPUT"
+          echo "Update package: ${zips[0]}"
+
+      - name: Safely unpack and overlay update
+        env:
+          ZIP_FILE: ${{ steps.locate.outputs.zip }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+          import shutil
+          import stat
+          import tempfile
+          import zipfile
+
+          repo = Path.cwd().resolve()
+          zip_path = (repo / os.environ["ZIP_FILE"]).resolve()
+
+          if zip_path.parent != repo:
+              raise SystemExit("Update ZIP must be in repository root.")
+
+          protected_roots = {
+              ".git",
+          }
+
+          protected_prefixes = (
+              ".github/workflows",
+          )
+
+          def normalized_relative(raw: str) -> Path:
+              raw = raw.replace("\\", "/")
+              p = Path(raw)
+
+              if p.is_absolute():
+                  raise SystemExit(f"Unsafe absolute path in ZIP: {raw}")
+
+              clean_parts = [part for part in p.parts if part not in ("", ".")]
+              if any(part == ".." for part in clean_parts):
+                  raise SystemExit(f"Unsafe traversal path in ZIP: {raw}")
+
+              return Path(*clean_parts) if clean_parts else Path(".")
+
+          def is_protected(rel: Path) -> bool:
+              s = rel.as_posix().rstrip("/")
+              if not s or s == ".":
+                  return False
+              if rel.parts and rel.parts[0] in protected_roots:
+                  return True
+              return any(s == prefix or s.startswith(prefix + "/")
+                         for prefix in protected_prefixes)
+
+          with tempfile.TemporaryDirectory(prefix="console-update-") as tmp:
+              tmp_root = Path(tmp)
+
+              with zipfile.ZipFile(zip_path) as zf:
+                  for info in zf.infolist():
+                      rel = normalized_relative(info.filename)
+
+                      if rel == Path("."):
+                          continue
+
+                      # Reject symlinks stored inside the ZIP.
+                      mode = (info.external_attr >> 16) & 0xFFFF
+                      if mode and stat.S_ISLNK(mode):
+                          raise SystemExit(f"Symlinks are not allowed in update ZIP: {info.filename}")
+
+                      if is_protected(rel):
+                          print(f"PROTECTED / skipped: {rel}")
+                          continue
+
+                      target = (tmp_root / rel).resolve()
+                      if tmp_root not in target.parents and target != tmp_root:
+                          raise SystemExit(f"Unsafe ZIP path: {info.filename}")
+
+                      if info.is_dir():
+                          target.mkdir(parents=True, exist_ok=True)
+                      else:
+                          target.parent.mkdir(parents=True, exist_ok=True)
+                          with zf.open(info) as src, target.open("wb") as dst:
+                              shutil.copyfileobj(src, dst)
+
+              # Ignore common archive metadata.
+              macos = tmp_root / "__MACOSX"
+              if macos.exists():
+                  shutil.rmtree(macos)
+              for ds in tmp_root.rglob(".DS_Store"):
+                  ds.unlink(missing_ok=True)
+
+              # If ZIP contains one wrapper directory, use its contents as repo root.
+              top = [p for p in tmp_root.iterdir()]
+              if len(top) == 1 and top[0].is_dir():
+                  source = top[0]
+                  print(f"Wrapper directory detected: {source.name}")
+              else:
+                  source = tmp_root
+
+              # Optional delete manifest.
+              # Put paths to delete, one per line, in .console-delete.
+              delete_manifest = source / ".console-delete"
+              if delete_manifest.exists():
+                  for line in delete_manifest.read_text(encoding="utf-8").splitlines():
+                      line = line.strip()
+                      if not line or line.startswith("#"):
+                          continue
+
+                      rel = normalized_relative(line)
+                      if rel == Path(".") or is_protected(rel):
+                          raise SystemExit(f"Refusing protected delete path: {line}")
+
+                      target = (repo / rel).resolve()
+                      if repo not in target.parents:
+                          raise SystemExit(f"Unsafe delete path: {line}")
+
+                      if target.is_dir():
+                          print(f"DELETE DIR: {rel}")
+                          shutil.rmtree(target)
+                      elif target.exists():
+                          print(f"DELETE FILE: {rel}")
+                          target.unlink()
+
+              # Overlay files into repository.
+              for item in source.rglob("*"):
+                  rel = item.relative_to(source)
+
+                  if rel.as_posix() == ".console-delete":
+                      continue
+                  if is_protected(rel):
+                      print(f"PROTECTED / skipped: {rel}")
+                      continue
+
+                  dst = repo / rel
+
+                  if item.is_dir():
+                      dst.mkdir(parents=True, exist_ok=True)
+                  elif item.is_file():
+                      dst.parent.mkdir(parents=True, exist_ok=True)
+                      shutil.copy2(item, dst)
+
+          # Remove the uploaded ZIP from repository root after successful overlay.
+          zip_path.unlink()
+          print("Update unpacked successfully.")
+          PY
+
+      - name: Show changed files
+        shell: bash
+        run: |
+          git status --short
+
+      - name: Commit unpacked update
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "console-update-bot"
+          git config user.email "console-update-bot@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "bot: unpack Console update"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
