@@ -25,8 +25,6 @@ jobs:
       PROJECT: Console.xcodeproj
       SCHEME: Console
       BUNDLE_ID: com.iumrah.beta
-      ARCHIVE_PATH: ${{ runner.temp }}/Console.xcarchive
-      EXPORT_PATH: ${{ runner.temp }}/ConsoleExport
 
     steps:
       - name: Checkout
@@ -112,6 +110,7 @@ jobs:
           set -euo pipefail
 
           BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+          ARCHIVE_PATH="$RUNNER_TEMP/Console.xcarchive"
 
           echo "Bundle ID: $BUNDLE_ID"
           echo "Version: $MARKETING_VERSION"
@@ -159,6 +158,9 @@ jobs:
           API_KEY_PATH: ${{ steps.api_key.outputs.path }}
         run: |
           set -euo pipefail
+
+          ARCHIVE_PATH="$RUNNER_TEMP/Console.xcarchive"
+          EXPORT_PATH="$RUNNER_TEMP/ConsoleExport"
 
           mkdir -p "$EXPORT_PATH"
 
