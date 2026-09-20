@@ -1,34 +1,20 @@
-# Console Messenger
+# Console — Console Beta App Store identity
 
-Native iOS-first messenger prototype.
+This patch detaches Console from the any former application identity.
 
-## Current first-version loop
+## New application identity
 
-1. Initialize local Identity.
-2. Choose a public `@handle`.
-3. Configure the Cloudflare Worker endpoint.
-4. Search another Node in `NETWORK`.
-5. Send a Handshake request.
-6. The other Node accepts or rejects it.
-7. Acceptance creates a 1:1 Terminal.
-8. Foreground messages use a persistent WebSocket and optimistic UI.
+- Product: `Console`
+- Bundle ID: `com.console.beta`
+- Keychain identity service: `com.console.beta.identity`
+- App Store Connect/TestFlight workflow Bundle ID: `com.console.beta`
 
-## Client
+## Apple setup
 
-- Swift
-- SwiftUI
-- CryptoKit local signing identity
-- Keychain
-- URLSession / URLSessionWebSocketTask
-- iOS 17+
-- Bundle ID: `com.iumrah.beta`
+1. In Apple Developer → Certificates, Identifiers & Profiles → Identifiers, create an explicit App ID with Bundle ID `com.console.beta`.
+2. In App Store Connect → Apps → + → New App, create a new iOS app named `Console` and choose `com.console.beta`.
+3. Keep the existing GitHub Apple Team/API-key secrets; they belong to the developer team, not the old Iumrah app.
+4. Upload this patch through the repository auto-unpack flow.
+5. Run `Console — TestFlight Cloud Signing` as a new workflow run.
 
-## Server
-
-- Cloudflare Worker
-- Durable Objects
-- SQLite-backed Durable Object storage
-
-## Security notice
-
-The first internal alpha does **not** claim E2EE. Message content is server-visible until the reviewed encryption phase is integrated.
+The project also declares `ITSAppUsesNonExemptEncryption = NO` for the current build configuration.
