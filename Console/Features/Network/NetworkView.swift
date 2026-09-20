@@ -6,35 +6,44 @@ struct NetworkView: View {
     @State private var results: [NetworkIdentity] = []
     @State private var searching = false
     @State private var errorText: String?
+    @State private var lastNotice: String?
 
     var body: some View {
         NavigationStack {
             ZStack {
-                ConsoleTheme.background.ignoresSafeArea()
+                ConsoleBackdrop()
 
                 ScrollView {
                     VStack(spacing: 14) {
                         ConsoleHeader(
                             path: "console://network",
-                            title: "NETWORK",
-                            trailing: session.api.baseURL == nil ? "OFFLINE" : "READY"
+                            title: "Network",
+                            trailing: networkLabel
                         )
-                        .padding(.bottom, 8)
+
+                        ConsoleMetricStrip(metrics: [
+                            ("INCOMING", String(format: "%02d", session.incomingHandshakes.count), session.incomingHandshakes.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent),
+                            ("OUTGOING", String(format: "%02d", session.outgoingHandshakes.count), ConsoleTheme.text),
+                            ("MATCHES", String(format: "%02d", results.count), results.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent)
+                        ])
 
                         searchPanel
                         requestPanel
                         resultPanel
 
+                        if let lastNotice {
+                            ConsoleSystemLine(text: lastNotice, tone: .success)
+                                .padding(.horizontal, 2)
+                        }
+
                         if let errorText {
-                            Text(errorText)
-                                .font(.console(10, weight: .bold))
-                                .foregroundStyle(ConsoleTheme.destructive)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            ConsoleSystemLine(text: errorText, tone: .error)
+                                .padding(.horizontal, 2)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    .padding(.bottom, 32)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 16)
+                    .padding(.bottom, 30)
                 }
                 .refreshable {
                     await session.refreshNetwork()
@@ -44,36 +53,51 @@ struct NetworkView: View {
                 HandshakeDetailView(request: request)
             }
             .toolbar(.hidden, for: .navigationBar)
+            .task {
+                if session.api.baseURL != nil && !session.networkOnline {
+                    await session.refreshNetwork()
+                }
+            }
         }
     }
 
     private var searchPanel: some View {
-        ConsoleCard {
-            VStack(alignment: .leading, spacing: 13) {
-                Text("ПОИСК УЗЛА")
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.muted)
+        ConsoleWindowCard(title: "scan@network:~") {
+            VStack(alignment: .leading, spacing: 12) {
+                ConsoleSystemLine(text: searching ? "scanning identity registry..." : "scanner awaiting target", tone: searching ? .warning : .normal)
 
                 ConsoleField(prompt: "@handle или node_id", text: $query)
-                    .onSubmit {
-                        performSearch()
-                    }
+                    .onSubmit { performSearch() }
 
-                HStack {
+                HStack(spacing: 14) {
                     Button {
                         performSearch()
                     } label: {
-                        Text(searching ? "СКАНИРОВАНИЕ..." : "СКАНИРОВАТЬ NETWORK")
-                            .font(.console(10, weight: .bold))
-                            .foregroundStyle(ConsoleTheme.accent)
+                        HStack(spacing: 7) {
+                            if searching {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(ConsoleTheme.accent)
+                            } else {
+                                Text(">")
+                            }
+
+                            Text(searching ? "СКАНИРОВАНИЕ" : "СКАНИРОВАТЬ NETWORK")
+                        }
+                        .font(.console(9, weight: .black))
+                        .foregroundStyle(ConsoleTheme.accent)
                     }
                     .buttonStyle(.plain)
                     .disabled(searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                     Spacer()
 
-                    Image(systemName: "qrcode.viewfinder")
-                        .foregroundStyle(ConsoleTheme.muted)
+                    HStack(spacing: 5) {
+                        Image(systemName: "qrcode.viewfinder")
+                        Text("QR")
+                    }
+                    .font(.console(9, weight: .bold))
+                    .foregroundStyle(ConsoleTheme.muted)
                 }
             }
         }
@@ -81,103 +105,134 @@ struct NetworkView: View {
 
     private var requestPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("ПОПЫТКИ ПОДКЛЮЧЕНИЯ")
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.muted)
-
-                Spacer()
-
-                Text(String(format: "%02d", session.incomingHandshakes.count))
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.accent)
-            }
+            ConsoleSectionLabel(
+                title: "HANDSHAKE REQUESTS",
+                value: String(format: "%02d", session.incomingHandshakes.count)
+            )
 
             if session.incomingHandshakes.isEmpty {
                 ConsoleCard {
-                    Text("ВХОДЯЩИХ ЗАПРОСОВ: 0")
-                        .font(.console(11, weight: .bold))
-                        .foregroundStyle(ConsoleTheme.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 10) {
+                        ConsoleStatusDot(active: false)
+                        Text("ВХОДЯЩИХ ЗАПРОСОВ НЕТ")
+                            .font(.console(10, weight: .black))
+                            .foregroundStyle(ConsoleTheme.secondary)
+                        Spacer()
+                        Text("IDLE")
+                            .font(.console(8, weight: .black))
+                            .foregroundStyle(ConsoleTheme.muted)
+                    }
                 }
             } else {
                 ForEach(session.incomingHandshakes) { request in
                     NavigationLink(value: request) {
-                        ConsoleCard {
-                            HStack(spacing: 12) {
-                                ConsoleStatusDot(active: true)
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(ConsoleTheme.accent.opacity(0.07))
+                                    .frame(width: 39, height: 39)
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(ConsoleTheme.lineGreen, lineWidth: 1)
+                                    }
 
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text("@\(request.peer?.handle ?? request.fromNode)")
-                                        .font(.console(14, weight: .bold))
-                                        .foregroundStyle(ConsoleTheme.text)
-                                    Text("ЗАПРОС СОЕДИНЕНИЯ")
-                                        .font(.console(9, weight: .bold))
-                                        .foregroundStyle(ConsoleTheme.accent)
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(ConsoleTheme.muted)
+                                Image(systemName: "link")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(ConsoleTheme.accent)
                             }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("@\(request.peer?.handle ?? request.fromNode)")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(ConsoleTheme.text)
+                                Text("ПОПЫТКА ПОДКЛЮЧЕНИЯ")
+                                    .font(.console(8.5, weight: .black))
+                                    .foregroundStyle(ConsoleTheme.accent)
+                            }
+
+                            Spacer()
+
+                            Text("REVIEW")
+                                .font(.console(8, weight: .black))
+                                .foregroundStyle(ConsoleTheme.muted)
                         }
+                        .padding(13)
+                        .background(ConsoleTheme.surface)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(ConsoleTheme.lineGreen, lineWidth: 1)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .padding(.top, 6)
+        .padding(.top, 2)
     }
 
     @ViewBuilder
     private var resultPanel: some View {
         if !results.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text("СОВПАДЕНИЯ")
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.muted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                ConsoleSectionLabel(title: "IDENTITY MATCHES", value: String(format: "%02d", results.count))
 
                 ForEach(results) { identity in
-                    ConsoleCard {
+                    ConsoleWindowCard(title: "identity://\(identity.handle)") {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("@\(identity.handle)")
-                                        .font(.console(15, weight: .bold))
+                                        .font(.consoleDisplay(18, weight: .bold))
                                         .foregroundStyle(ConsoleTheme.text)
-                                    Text(identity.nodeID)
-                                        .font(.console(9))
+                                    Text("NODE \(compact(identity.nodeID))")
+                                        .font(.console(9, weight: .bold))
                                         .foregroundStyle(ConsoleTheme.muted)
                                 }
 
                                 Spacer()
 
-                                Text("NODE")
-                                    .font(.console(9, weight: .bold))
-                                    .foregroundStyle(ConsoleTheme.accent)
+                                ConsoleStatusPill(text: "DISCOVERED")
                             }
 
-                            Text(identity.fingerprint)
-                                .font(.console(10, weight: .medium))
-                                .foregroundStyle(ConsoleTheme.secondary)
-                                .lineLimit(1)
+                            Rectangle().fill(ConsoleTheme.line).frame(height: 1)
 
-                            Button {
-                                requestConnection(identity)
-                            } label: {
-                                Text("УСТАНОВИТЬ СОЕДИНЕНИЕ  →")
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("FINGERPRINT")
+                                    .font(.console(8, weight: .black))
+                                    .foregroundStyle(ConsoleTheme.muted)
+                                Text(identity.fingerprint)
                                     .font(.console(10, weight: .bold))
-                                    .foregroundStyle(ConsoleTheme.accent)
+                                    .foregroundStyle(ConsoleTheme.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.72)
                             }
-                            .buttonStyle(.plain)
+
+                            if isSelf(identity) {
+                                ConsoleSystemLine(text: "ЭТО ВАШ УЗЕЛ", tone: .warning)
+                                    .padding(.top, 2)
+                            } else {
+                                ConsoleCommandButton(title: "УСТАНОВИТЬ СОЕДИНЕНИЕ") {
+                                    requestConnection(identity)
+                                }
+                                .padding(.top, 2)
+                            }
                         }
                     }
                 }
             }
-            .padding(.top, 6)
+            .padding(.top, 2)
         }
+    }
+
+
+    private var networkLabel: String {
+        if session.api.baseURL == nil { return "OFFLINE" }
+        return session.networkOnline ? "CONNECTED" : "CONNECTING"
+    }
+
+    private func isSelf(_ identity: NetworkIdentity) -> Bool {
+        identity.nodeID == session.identity?.nodeID
     }
 
     private func performSearch() {
@@ -186,10 +241,15 @@ struct NetworkView: View {
 
         searching = true
         errorText = nil
+        lastNotice = nil
 
         Task {
             do {
                 results = try await session.search(value)
+                if results.isEmpty {
+                    lastNotice = nil
+                    errorText = "СОВПАДЕНИЙ НЕ ОБНАРУЖЕНО"
+                }
             } catch {
                 errorText = error.localizedDescription
             }
@@ -198,13 +258,22 @@ struct NetworkView: View {
     }
 
     private func requestConnection(_ identity: NetworkIdentity) {
+        errorText = nil
+        lastNotice = nil
+
         Task {
             do {
                 try await session.requestConnection(to: identity)
                 results.removeAll { $0.id == identity.id }
+                lastNotice = "HANDSHAKE REQUEST TRANSMITTED"
             } catch {
                 errorText = error.localizedDescription
             }
         }
+    }
+
+    private func compact(_ value: String) -> String {
+        guard value.count > 22 else { return value }
+        return "\(value.prefix(12))…\(value.suffix(7))"
     }
 }

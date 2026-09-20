@@ -8,144 +8,207 @@ struct IdentityView: View {
     @State private var endpointMessage: String?
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                ConsoleHeader(
-                    path: "console://identity",
-                    title: "IDENTITY",
-                    trailing: "LOCAL KEY"
-                )
-                .padding(.bottom, 8)
+        ZStack {
+            ConsoleBackdrop()
 
-                identityCard
-                qrCard
-                networkCard
-                securityCard
+            ScrollView {
+                VStack(spacing: 14) {
+                    ConsoleHeader(
+                        path: "console://identity",
+                        title: "Identity",
+                        trailing: "LOCAL KEY"
+                    )
+
+                    ConsoleMetricStrip(metrics: [
+                        ("KEY", "LOCAL", ConsoleTheme.accent),
+                        ("NETWORK", networkMetric, session.networkOnline ? ConsoleTheme.accent : ConsoleTheme.warning),
+                        ("E2EE", "OFF", ConsoleTheme.warning)
+                    ])
+
+                    identityCard
+                    qrCard
+                    networkCard
+                    securityCard
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 16)
+                .padding(.bottom, 30)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-            .padding(.bottom, 32)
         }
-        .background(ConsoleTheme.background)
         .onAppear {
             endpoint = session.endpointStore.value?.absoluteString ?? ""
         }
     }
 
     private var identityCard: some View {
-        ConsoleCard {
-            VStack(alignment: .leading, spacing: 18) {
+        ConsoleWindowCard(title: "identity@console:~") {
+            VStack(alignment: .leading, spacing: 14) {
+                ConsoleSystemLine(text: "local signing identity mounted", tone: .success)
                 dataRow("HANDLE", "@\(session.profile?.handle ?? "unknown")")
                 dataRow("NODE", session.identity?.nodeID ?? "—")
-                dataRow("ОТПЕЧАТОК", session.identity?.fingerprint ?? "—")
+                dataRow("FINGERPRINT", session.identity?.fingerprint ?? "—")
 
-                Button {
+                Rectangle().fill(ConsoleTheme.line).frame(height: 1)
+
+                ConsoleCommandButton(title: "КОПИРОВАТЬ NODE ID") {
                     UIPasteboard.general.string = session.identity?.nodeID
-                } label: {
-                    Label("КОПИРОВАТЬ NODE ID", systemImage: "doc.on.doc")
-                        .font(.console(10, weight: .bold))
-                        .foregroundStyle(ConsoleTheme.accent)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
 
     private var qrCard: some View {
         ConsoleCard {
-            HStack(spacing: 18) {
+            HStack(spacing: 17) {
                 if let image = qrImage {
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable()
-                        .frame(width: 104, height: 104)
+                        .frame(width: 100, height: 100)
+                        .padding(7)
                         .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("IDENTITY QR")
-                        .font(.console(12, weight: .bold))
+                        .font(.console(10, weight: .black))
+                        .tracking(0.8)
+                        .foregroundStyle(ConsoleTheme.accent)
+
+                    Text("Публичный код Identity")
+                        .font(.consoleDisplay(16, weight: .bold))
                         .foregroundStyle(ConsoleTheme.text)
 
-                    Text("QR содержит только публичный Node ID и handle.")
-                        .font(.console(10))
-                        .foregroundStyle(ConsoleTheme.muted)
+                    Text("Содержит только публичный Node ID и handle. Закрытый ключ в QR не входит.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ConsoleTheme.secondary)
                         .lineSpacing(3)
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
     }
 
     private var networkCard: some View {
-        ConsoleCard {
+        ConsoleWindowCard(title: "network.config") {
             VStack(alignment: .leading, spacing: 12) {
-                Text("NETWORK ENDPOINT")
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.muted)
+                ConsoleSystemLine(
+                    text: networkStatusText,
+                    tone: session.networkOnline ? .success : (session.api.baseURL == nil ? .error : .warning)
+                )
 
-                ConsoleField(prompt: "https://...workers.dev", text: $endpoint)
-
-                Button {
-                    do {
-                        try session.saveServerURL(endpoint)
-                        endpointMessage = "СЕТЬ СОХРАНЕНА"
-                        Task { await session.refreshNetwork() }
-                    } catch {
-                        endpointMessage = error.localizedDescription
+                if let url = session.api.baseURL {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("PRODUCTION ENDPOINT")
+                            .font(.console(8, weight: .black))
+                            .tracking(0.7)
+                            .foregroundStyle(ConsoleTheme.muted)
+                        Text(url.absoluteString)
+                            .font(.console(10, weight: .bold))
+                            .foregroundStyle(ConsoleTheme.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
                     }
-                } label: {
-                    Text("ПРИМЕНИТЬ ENDPOINT")
-                        .font(.console(10, weight: .bold))
-                        .foregroundStyle(ConsoleTheme.accent)
+
+                    ConsoleCommandButton(title: session.networkBusy ? "ПРОВЕРКА СЕТИ" : "ПЕРЕПОДКЛЮЧИТЬ") {
+                        Task { await session.refreshNetwork() }
+                    }
+                    .disabled(session.networkBusy)
                 }
-                .buttonStyle(.plain)
+
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ConsoleField(prompt: "https://...workers.dev", text: $endpoint)
+
+                        ConsoleCommandButton(title: "ПРИМЕНИТЬ ENDPOINT") {
+                            do {
+                                try session.saveServerURL(endpoint)
+                                endpointMessage = "ENDPOINT СОХРАНЁН"
+                                Task { await session.refreshNetwork() }
+                            } catch {
+                                endpointMessage = error.localizedDescription
+                            }
+                        }
+                    }
+                    .padding(.top, 10)
+                } label: {
+                    Text("ADVANCED / OVERRIDE")
+                        .font(.console(8, weight: .black))
+                        .foregroundStyle(ConsoleTheme.muted)
+                }
+                .tint(ConsoleTheme.muted)
 
                 if let endpointMessage {
-                    Text(endpointMessage)
-                        .font(.console(9, weight: .bold))
-                        .foregroundStyle(endpointMessage.contains("СОХРАНЕНА") ? ConsoleTheme.accent : ConsoleTheme.destructive)
+                    ConsoleSystemLine(
+                        text: endpointMessage,
+                        tone: endpointMessage.contains("СОХРАНЁН") ? .success : .error
+                    )
                 }
             }
         }
     }
 
+    private var networkMetric: String {
+        guard session.api.baseURL != nil else { return "OFFLINE" }
+        return session.networkOnline ? "READY" : "LINK"
+    }
+
+    private var networkStatusText: String {
+        guard session.api.baseURL != nil else { return "production endpoint missing" }
+        return session.networkOnline ? "production network connected" : "endpoint loaded / awaiting link"
+    }
+
     private var securityCard: some View {
-        ConsoleCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("SECURITY STATE")
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.muted)
+        ConsoleWindowCard(title: "security.state") {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack {
+                    Text("SECURITY STATE")
+                        .font(.console(9, weight: .black))
+                        .foregroundStyle(ConsoleTheme.muted)
+                    Spacer()
+                    ConsoleStatusPill(text: "INTERNAL", active: false)
+                }
 
-                Text("IDENTITY KEY: LOCAL")
-                    .font(.console(11, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.accent)
+                stateRow("IDENTITY KEY", "LOCAL", ConsoleTheme.accent)
+                stateRow("MESSAGING", "REALTIME V1", ConsoleTheme.text)
+                stateRow("E2EE", "НЕ АКТИВИРОВАНО", ConsoleTheme.warning)
 
-                Text("MESSAGING: REALTIME V1\nE2EE: НЕ АКТИВИРОВАНО")
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.warning)
-                    .lineSpacing(4)
+                Rectangle().fill(ConsoleTheme.line).frame(height: 1)
 
-                Text("Интерфейс намеренно не показывает «защищённый канал», пока проверенный E2EE-протокол не подключён.")
-                    .font(.console(10))
-                    .foregroundStyle(ConsoleTheme.muted)
+                Text("Console не показывает состояние защищённого канала, пока проверенный E2EE-протокол действительно не активирован.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(ConsoleTheme.secondary)
                     .lineSpacing(3)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func dataRow(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label)
-                .font(.console(9, weight: .bold))
+                .font(.console(8, weight: .black))
+                .tracking(0.75)
                 .foregroundStyle(ConsoleTheme.muted)
             Text(value)
-                .font(.console(12, weight: .bold))
+                .font(.console(11, weight: .bold))
                 .foregroundStyle(ConsoleTheme.text)
                 .textSelection(.enabled)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+        }
+    }
+
+    private func stateRow(_ key: String, _ value: String, _ color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(key)
+                .font(.console(9, weight: .black))
+                .foregroundStyle(ConsoleTheme.muted)
+            Spacer()
+            Text(value)
+                .font(.console(9, weight: .black))
+                .foregroundStyle(color)
         }
     }
 

@@ -32,6 +32,11 @@ final class ConsoleAPI {
         endpointStore.value
     }
 
+    func health() async throws -> ConsoleHealthResponse {
+        let url = try requireBaseURL().appending(path: "/health")
+        return try await perform(URLRequest(url: url))
+    }
+
     func register(identity: ConsoleIdentity, handle: String) async throws -> NetworkIdentity {
         let request = RegisterIdentityRequest(
             nodeID: identity.nodeID,

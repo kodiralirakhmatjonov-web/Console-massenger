@@ -132,6 +132,15 @@ struct TerminalMessage: Codable, Identifiable, Hashable {
     }
 }
 
+
+struct ConsoleHealthResponse: Codable {
+    let service: String
+    let status: String
+    let version: String
+    let e2ee: Bool
+    let time: String
+}
+
 struct SearchResponse: Codable {
     let identities: [NetworkIdentity]
 }
