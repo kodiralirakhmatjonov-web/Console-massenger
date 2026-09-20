@@ -59,16 +59,38 @@ struct TerminalSummary: Codable, Identifiable, Hashable {
     }
 }
 
+enum MessageDelivery: String, Codable, Hashable, CaseIterable {
+    case queued
+    case sending
+    case sent
+    case delivered
+    case read
+    case failed
+
+    var rank: Int {
+        switch self {
+        case .failed: return -1
+        case .queued: return 0
+        case .sending: return 1
+        case .sent: return 2
+        case .delivered: return 3
+        case .read: return 4
+        }
+    }
+}
+
 struct TerminalMessage: Codable, Identifiable, Hashable {
-    let seq: Int?
-    let eventID: String?
+    var seq: Int?
+    var eventID: String?
     let clientID: String
     let senderNode: String
     let content: String
-    let createdAt: String
-    var delivery: MessageDelivery = .delivered
+    var createdAt: String
+    var delivery: MessageDelivery
 
-    var id: String { eventID ?? clientID }
+    // client_id exists before the server assigns event_id and therefore stays stable
+    // across optimistic render, persistence, ACK and history merge.
+    var id: String { clientID }
 
     enum CodingKeys: String, CodingKey {
         case seq
@@ -77,14 +99,37 @@ struct TerminalMessage: Codable, Identifiable, Hashable {
         case senderNode = "sender_node"
         case content
         case createdAt = "created_at"
+        case delivery
     }
-}
 
-enum MessageDelivery: Hashable {
-    case sending
-    case sent
-    case delivered
-    case failed
+    init(
+        seq: Int?,
+        eventID: String?,
+        clientID: String,
+        senderNode: String,
+        content: String,
+        createdAt: String,
+        delivery: MessageDelivery = .delivered
+    ) {
+        self.seq = seq
+        self.eventID = eventID
+        self.clientID = clientID
+        self.senderNode = senderNode
+        self.content = content
+        self.createdAt = createdAt
+        self.delivery = delivery
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        seq = try container.decodeIfPresent(Int.self, forKey: .seq)
+        eventID = try container.decodeIfPresent(String.self, forKey: .eventID)
+        clientID = try container.decode(String.self, forKey: .clientID)
+        senderNode = try container.decode(String.self, forKey: .senderNode)
+        content = try container.decode(String.self, forKey: .content)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        delivery = try container.decodeIfPresent(MessageDelivery.self, forKey: .delivery) ?? .delivered
+    }
 }
 
 struct SearchResponse: Codable {

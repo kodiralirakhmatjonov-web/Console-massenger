@@ -54,7 +54,7 @@ export default {
       return json({
         service: "console-realtime",
         status: "READY",
-        version: "0.2.0-alpha",
+        version: "1.0.0-rc1",
         e2ee: false,
         time: nowISO(),
       });
@@ -559,6 +559,21 @@ export class TerminalRoom {
         CREATE INDEX IF NOT EXISTS idx_messages_seq
         ON messages(seq DESC);
       `);
+
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS message_receipts (
+          event_id TEXT NOT NULL,
+          node_id TEXT NOT NULL,
+          delivered_at TEXT,
+          read_at TEXT,
+          PRIMARY KEY (event_id, node_id)
+        );
+      `);
+
+      this.ctx.storage.sql.exec(`
+        CREATE INDEX IF NOT EXISTS idx_message_receipts_event
+        ON message_receipts(event_id);
+      `);
     });
   }
 
@@ -591,11 +606,34 @@ export class TerminalRoom {
       const rows = [
         ...this.ctx.storage.sql.exec(
           `
-          SELECT seq, event_id, client_id, sender_node, content, created_at
-          FROM messages
-          ORDER BY seq DESC
+          SELECT
+            m.seq,
+            m.event_id,
+            m.client_id,
+            m.sender_node,
+            m.content,
+            m.created_at,
+            CASE
+              WHEN m.sender_node != ? THEN 'delivered'
+              WHEN EXISTS (
+                SELECT 1 FROM message_receipts rr
+                WHERE rr.event_id = m.event_id
+                  AND rr.node_id != m.sender_node
+                  AND rr.read_at IS NOT NULL
+              ) THEN 'read'
+              WHEN EXISTS (
+                SELECT 1 FROM message_receipts dr
+                WHERE dr.event_id = m.event_id
+                  AND dr.node_id != m.sender_node
+                  AND dr.delivered_at IS NOT NULL
+              ) THEN 'delivered'
+              ELSE 'sent'
+            END AS delivery
+          FROM messages m
+          ORDER BY m.seq DESC
           LIMIT ?
           `,
+          node,
           limit,
         ),
       ].reverse();
@@ -622,10 +660,10 @@ export class TerminalRoom {
 
     server.send(JSON.stringify({
       type: "channel_ready",
-      protocol: 1,
+      protocol: 2,
       terminal_id: terminalID,
       node_id: node,
-      security: "internal-alpha-no-e2ee",
+      security: "transport-only-no-e2ee",
       server_time: nowISO(),
     }));
 
@@ -645,9 +683,22 @@ export class TerminalRoom {
       }
 
       const frame = JSON.parse(raw);
+      const tags = this.ctx.getTags(ws);
+      const terminalID = tags[0];
+      const socketNode = safeNode(tags[1]);
+
+      if (!terminalID || !socketNode) {
+        ws.send(JSON.stringify({ type: "error", code: "SOCKET_IDENTITY_INVALID" }));
+        return;
+      }
 
       if (frame?.type === "ping") {
         ws.send(JSON.stringify({ type: "pong", server_time: nowISO() }));
+        return;
+      }
+
+      if (frame?.type === "delivery_receipt" || frame?.type === "read_receipt") {
+        await this.handleReceipt(ws, frame, socketNode);
         return;
       }
 
@@ -660,14 +711,21 @@ export class TerminalRoom {
         typeof frame.client_id === "string" && frame.client_id.length <= 128
           ? frame.client_id
           : null;
-      const senderNode = safeNode(frame.sender_node);
-      const content =
-        typeof frame.content === "string" ? frame.content.trim() : null;
+      const content = typeof frame.content === "string" ? frame.content : null;
 
-      if (!clientID || !senderNode || !content || content.length > 10000) {
+      if (
+        !clientID ||
+        !content ||
+        !content.trim() ||
+        content.length > 10000
+      ) {
         ws.send(JSON.stringify({ type: "error", code: "INVALID_MESSAGE_FRAME" }));
         return;
       }
+
+      // The sender is derived from the membership-checked socket, never trusted
+      // from the client-provided sender_node field.
+      const senderNode = socketNode;
 
       const existing = [
         ...this.ctx.storage.sql.exec(
@@ -732,24 +790,81 @@ export class TerminalRoom {
 
       for (const peer of this.ctx.getWebSockets()) {
         if (peer === ws) continue;
+        const peerTags = this.ctx.getTags(peer);
+        if (peerTags[1] === senderNode) continue;
         try {
           peer.send(outbound);
         } catch {}
       }
 
-      const tags = this.ctx.getTags(ws);
-      const terminalID = tags[0];
-      if (terminalID) {
-        await networkStub(this.env).fetch(
-          new Request("https://network/internal/touch-terminal", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ terminal_id: terminalID }),
-          }),
-        );
-      }
+      await networkStub(this.env).fetch(
+        new Request("https://network/internal/touch-terminal", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ terminal_id: terminalID }),
+        }),
+      );
     } catch {
       ws.send(JSON.stringify({ type: "error", code: "FRAME_REJECTED" }));
+    }
+  }
+
+  async handleReceipt(ws, frame, socketNode) {
+    const eventID =
+      typeof frame.event_id === "string" && frame.event_id.length <= 128
+        ? frame.event_id
+        : null;
+
+    if (!eventID) {
+      ws.send(JSON.stringify({ type: "error", code: "INVALID_RECEIPT" }));
+      return;
+    }
+
+    const message = [
+      ...this.ctx.storage.sql.exec(
+        `SELECT event_id, sender_node FROM messages WHERE event_id = ? LIMIT 1`,
+        eventID,
+      ),
+    ][0];
+
+    if (!message) {
+      ws.send(JSON.stringify({ type: "error", code: "MESSAGE_NOT_FOUND" }));
+      return;
+    }
+
+    if (message.sender_node === socketNode) {
+      return;
+    }
+
+    const at = nowISO();
+    const isRead = frame.type === "read_receipt";
+
+    this.ctx.storage.sql.exec(
+      `
+      INSERT INTO message_receipts(event_id, node_id, delivered_at, read_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(event_id, node_id) DO UPDATE SET
+        delivered_at = COALESCE(message_receipts.delivered_at, excluded.delivered_at),
+        read_at = COALESCE(message_receipts.read_at, excluded.read_at)
+      `,
+      eventID,
+      socketNode,
+      at,
+      isRead ? at : null,
+    );
+
+    const outbound = JSON.stringify({
+      type: isRead ? "read_receipt" : "delivery_receipt",
+      event_id: eventID,
+      node_id: socketNode,
+      at,
+    });
+
+    for (const peer of this.ctx.getWebSockets()) {
+      if (peer === ws) continue;
+      try {
+        peer.send(outbound);
+      } catch {}
     }
   }
 

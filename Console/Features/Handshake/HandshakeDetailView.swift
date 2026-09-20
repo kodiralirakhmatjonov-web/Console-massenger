@@ -59,7 +59,7 @@ struct HandshakeDetailView: View {
 
                 Text(
                     "Разрешение создаст Terminal между двумя Identity. "
-                    + "Текущая alpha-версия ещё не заявляет E2EE."
+                    + "Текущая версия пока не использует E2EE."
                 )
                 .font(.console(10))
                 .foregroundStyle(ConsoleTheme.muted)

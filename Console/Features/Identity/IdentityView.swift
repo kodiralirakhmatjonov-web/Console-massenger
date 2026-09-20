@@ -123,7 +123,7 @@ struct IdentityView: View {
                     .font(.console(11, weight: .bold))
                     .foregroundStyle(ConsoleTheme.accent)
 
-                Text("MESSAGING: INTERNAL ALPHA\nE2EE: НЕ АКТИВИРОВАНО")
+                Text("MESSAGING: REALTIME V1\nE2EE: НЕ АКТИВИРОВАНО")
                     .font(.console(10, weight: .bold))
                     .foregroundStyle(ConsoleTheme.warning)
                     .lineSpacing(4)

@@ -1,4 +1,4 @@
-# Console Server — First Version Alpha
+# Console Server — Realtime Core v1
 
 Cloudflare Worker + Durable Objects.
 
@@ -13,15 +13,19 @@ Cloudflare Worker + Durable Objects.
 - realtime WebSocket fan-out;
 - optimistic client messages + server ACK;
 - message deduplication by `client_id`;
-- durable message history.
+- durable message history;
+- delivery receipts;
+- read receipts;
+- durable receipt metadata;
+- server-side sender binding to the membership-checked WebSocket node.
 
 ## Security status
 
-This is an **internal alpha transport**, not a production secure messenger.
+This is a production-oriented realtime core, **not yet an E2EE secure messenger**.
 
-The Identity signing key is local on iOS, but request authentication and audited E2EE are intentionally not claimed in this version. Message content is currently visible to the server.
+The Identity signing key is local on iOS, but strong cryptographic request authentication and audited E2EE are not implemented yet. Message content is currently visible to the server.
 
-Before any public privacy/security claim we must add:
+Before any public privacy/security claim we still need:
 
 1. cryptographic request authentication;
 2. device binding;
