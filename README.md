@@ -1,16 +1,24 @@
-Console Network compile fix
+Console UI Foundation Final Fix
 
-Fixes the current GitHub Actions Swift compile failure where NetworkView
-references the production visual system components but the repository has
-an older ConsoleComponents.swift.
+Purpose:
+- fixes current TestFlight compile error:
+  Font has no member 'consoleDisplay'
+- prevents another Theme / Components / Network / Identity version mismatch
 
-Restores:
-- ConsoleBackdrop
-- ConsoleMetricStrip
-- ConsoleSystemLine
-- ConsoleWindowCard
-- ConsoleSectionLabel
-- ConsoleStatusPill
-- ConsoleCommandButton
+Includes only:
+- Console/Core/ConsoleTheme.swift
+- Console/Components/ConsoleComponents.swift
+- Console/Features/Network/NetworkView.swift
+- Console/Features/Identity/IdentityView.swift
 
-No backend, Bundle ID, signing, workflow, or Cloudflare configuration changes.
+Preserves:
+- com.console.beta
+- Cloudflare auto endpoint
+- current production network/search logic
+- current visual system
+- backend/signing/workflows untouched
+
+Validation:
+- all included Swift files pass swiftc frontend parse
+- Font.consoleDisplay declaration verified
+- required production UI component declarations verified
