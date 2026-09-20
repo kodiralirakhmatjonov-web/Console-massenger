@@ -24,7 +24,7 @@ jobs:
     env:
       PROJECT: Console.xcodeproj
       SCHEME: Console
-      BUNDLE_ID: com.iumrah.beta
+      BUNDLE_ID: com.console.beta
 
     steps:
       - name: Checkout
