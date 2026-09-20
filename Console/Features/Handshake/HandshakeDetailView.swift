@@ -15,9 +15,11 @@ struct HandshakeDetailView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Button("←") { dismiss() }
-                        .font(.console(18, weight: .bold))
-                        .foregroundStyle(ConsoleTheme.text)
+                    Button("←") {
+                        dismiss()
+                    }
+                    .font(.console(18, weight: .bold))
+                    .foregroundStyle(ConsoleTheme.text)
 
                     Spacer()
 
@@ -33,18 +35,36 @@ struct HandshakeDetailView: View {
                     .foregroundStyle(ConsoleTheme.text)
 
                 VStack(alignment: .leading, spacing: 18) {
-                    dataRow("УЗЕЛ", request.peer?.handle.map { "@\($0)" } ?? request.fromNode)
-                    dataRow("NODE ID", request.peer?.nodeID ?? request.fromNode)
-                    dataRow("ОТПЕЧАТОК", request.peer?.fingerprint ?? "НЕ ПОЛУЧЕН")
-                    dataRow("СОСТОЯНИЕ ДОВЕРИЯ", "НЕОПРЕДЕЛЕНО")
+                    dataRow(
+                        "УЗЕЛ",
+                        request.peer.map { "@\($0.handle)" } ?? request.fromNode
+                    )
+
+                    dataRow(
+                        "NODE ID",
+                        request.peer?.nodeID ?? request.fromNode
+                    )
+
+                    dataRow(
+                        "ОТПЕЧАТОК",
+                        request.peer?.fingerprint ?? "НЕ ПОЛУЧЕН"
+                    )
+
+                    dataRow(
+                        "СОСТОЯНИЕ ДОВЕРИЯ",
+                        "НЕОПРЕДЕЛЕНО"
+                    )
                 }
                 .padding(.top, 30)
 
-                Text("Разрешение создаст Terminal между двумя Identity. Текущая alpha-версия ещё не заявляет E2EE.")
-                    .font(.console(10))
-                    .foregroundStyle(ConsoleTheme.muted)
-                    .lineSpacing(4)
-                    .padding(.top, 26)
+                Text(
+                    "Разрешение создаст Terminal между двумя Identity. "
+                    + "Текущая alpha-версия ещё не заявляет E2EE."
+                )
+                .font(.console(10))
+                .foregroundStyle(ConsoleTheme.muted)
+                .lineSpacing(4)
+                .padding(.top, 26)
 
                 if let errorText {
                     Text(errorText)
@@ -56,7 +76,10 @@ struct HandshakeDetailView: View {
                 Spacer()
 
                 VStack(spacing: 10) {
-                    ConsolePrimaryButton(title: busy ? "ОБРАБОТКА..." : "РАЗРЕШИТЬ ДОСТУП", disabled: busy) {
+                    ConsolePrimaryButton(
+                        title: busy ? "ОБРАБОТКА..." : "РАЗРЕШИТЬ ДОСТУП",
+                        disabled: busy
+                    ) {
                         decide("accepted")
                     }
 
@@ -83,6 +106,7 @@ struct HandshakeDetailView: View {
             Text(label)
                 .font(.console(9, weight: .bold))
                 .foregroundStyle(ConsoleTheme.muted)
+
             Text(value)
                 .font(.console(13, weight: .bold))
                 .foregroundStyle(ConsoleTheme.text)

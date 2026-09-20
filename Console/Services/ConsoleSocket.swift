@@ -1,5 +1,19 @@
 import Foundation
 
+enum ConsoleSocketError: LocalizedError {
+    case notConnected
+    case encodingFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .notConnected:
+            return "СЕТЬ НЕ ПОДКЛЮЧЕНА"
+        case .encodingFailed:
+            return "ПАКЕТ НЕ СФОРМИРОВАН"
+        }
+    }
+}
+
 @MainActor
 final class ConsoleSocket: ObservableObject {
     enum Status: Equatable {
@@ -31,7 +45,9 @@ final class ConsoleSocket: ObservableObject {
     }
 
     func sendMessage(clientID: String, senderNode: String, content: String) async throws {
-        guard let task else { throw URLError(.notConnectedToInternet) }
+        guard let task else {
+            throw ConsoleSocketError.notConnected
+        }
 
         let payload: [String: Any] = [
             "type": "message",
@@ -41,8 +57,9 @@ final class ConsoleSocket: ObservableObject {
         ]
 
         let data = try JSONSerialization.data(withJSONObject: payload)
+
         guard let text = String(data: data, encoding: .utf8) else {
-            throw URLError(.cannotEncodeContentData)
+            throw ConsoleSocketError.encodingFailed
         }
 
         try await task.send(.string(text))
@@ -51,8 +68,10 @@ final class ConsoleSocket: ObservableObject {
     func disconnect() {
         receiveTask?.cancel()
         receiveTask = nil
+
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
+
         status = .disconnected
     }
 
@@ -60,14 +79,17 @@ final class ConsoleSocket: ObservableObject {
         while !Task.isCancelled {
             do {
                 guard let task else { return }
+
                 let message = try await task.receive()
 
                 let data: Data
                 switch message {
                 case let .string(text):
                     data = Data(text.utf8)
+
                 case let .data(raw):
                     data = raw
+
                 @unknown default:
                     continue
                 }

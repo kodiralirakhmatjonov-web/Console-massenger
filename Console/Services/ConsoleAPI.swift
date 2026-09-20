@@ -43,11 +43,17 @@ final class ConsoleAPI {
     }
 
     func search(_ query: String) async throws -> [NetworkIdentity] {
-        guard var components = URLComponents(url: try requireBaseURL().appending(path: "/v1/identities/search"), resolvingAgainstBaseURL: false) else {
+        guard var components = URLComponents(
+            url: try requireBaseURL().appending(path: "/v1/identities/search"),
+            resolvingAgainstBaseURL: false
+        ) else {
             throw ConsoleAPIError.invalidResponse
         }
+
         components.queryItems = [URLQueryItem(name: "q", value: query)]
-        guard let url = components.url else { throw ConsoleAPIError.invalidResponse }
+        guard let url = components.url else {
+            throw ConsoleAPIError.invalidResponse
+        }
 
         let response: SearchResponse = try await perform(URLRequest(url: url))
         return response.identities
@@ -59,25 +65,47 @@ final class ConsoleAPI {
     }
 
     func handshakes(nodeID: String) async throws -> HandshakeListResponse {
-        guard var components = URLComponents(url: try requireBaseURL().appending(path: "/v1/handshakes"), resolvingAgainstBaseURL: false) else {
+        guard var components = URLComponents(
+            url: try requireBaseURL().appending(path: "/v1/handshakes"),
+            resolvingAgainstBaseURL: false
+        ) else {
             throw ConsoleAPIError.invalidResponse
         }
+
         components.queryItems = [URLQueryItem(name: "node", value: nodeID)]
-        guard let url = components.url else { throw ConsoleAPIError.invalidResponse }
+        guard let url = components.url else {
+            throw ConsoleAPIError.invalidResponse
+        }
+
         return try await perform(URLRequest(url: url))
     }
 
-    func decideHandshake(id: String, nodeID: String, decision: String) async throws -> HandshakeDecisionResponse {
+    func decideHandshake(
+        id: String,
+        nodeID: String,
+        decision: String
+    ) async throws -> HandshakeDecisionResponse {
         let body = HandshakeDecisionRequest(nodeID: nodeID, decision: decision)
-        return try await send(path: "/v1/handshakes/\(id)/decision", method: "POST", body: body)
+        return try await send(
+            path: "/v1/handshakes/\(id)/decision",
+            method: "POST",
+            body: body
+        )
     }
 
     func terminals(nodeID: String) async throws -> [TerminalSummary] {
-        guard var components = URLComponents(url: try requireBaseURL().appending(path: "/v1/terminals"), resolvingAgainstBaseURL: false) else {
+        guard var components = URLComponents(
+            url: try requireBaseURL().appending(path: "/v1/terminals"),
+            resolvingAgainstBaseURL: false
+        ) else {
             throw ConsoleAPIError.invalidResponse
         }
+
         components.queryItems = [URLQueryItem(name: "node", value: nodeID)]
-        guard let url = components.url else { throw ConsoleAPIError.invalidResponse }
+        guard let url = components.url else {
+            throw ConsoleAPIError.invalidResponse
+        }
+
         let response: TerminalListResponse = try await perform(URLRequest(url: url))
         return response.terminals
     }
@@ -89,28 +117,43 @@ final class ConsoleAPI {
         ) else {
             throw ConsoleAPIError.invalidResponse
         }
+
         components.queryItems = [
             URLQueryItem(name: "node", value: nodeID),
             URLQueryItem(name: "limit", value: "80")
         ]
-        guard let url = components.url else { throw ConsoleAPIError.invalidResponse }
+
+        guard let url = components.url else {
+            throw ConsoleAPIError.invalidResponse
+        }
+
         let response: TerminalHistoryResponse = try await perform(URLRequest(url: url))
         return response.messages
     }
 
     func socketURL(terminalID: String, nodeID: String) throws -> URL {
-        var components = URLComponents(
+        guard var components = URLComponents(
             url: try requireBaseURL().appending(path: "/v1/terminals/\(terminalID)/socket"),
             resolvingAgainstBaseURL: false
-        )
-        components?.scheme = components?.scheme == "https" ? "wss" : "ws"
-        components?.queryItems = [URLQueryItem(name: "node", value: nodeID)]
-        guard let url = components?.url else { throw ConsoleAPIError.invalidResponse }
+        ) else {
+            throw ConsoleAPIError.invalidResponse
+        }
+
+        let originalScheme = components.scheme?.lowercased()
+        components.scheme = originalScheme == "https" ? "wss" : "ws"
+        components.queryItems = [URLQueryItem(name: "node", value: nodeID)]
+
+        guard let url = components.url else {
+            throw ConsoleAPIError.invalidResponse
+        }
+
         return url
     }
 
     private func requireBaseURL() throws -> URL {
-        guard let url = endpointStore.value else { throw ConsoleAPIError.serverNotConfigured }
+        guard let url = endpointStore.value else {
+            throw ConsoleAPIError.serverNotConfigured
+        }
         return url
     }
 
@@ -129,6 +172,7 @@ final class ConsoleAPI {
 
     private func perform<Response: Decodable>(_ request: URLRequest) async throws -> Response {
         let (data, response) = try await URLSession.shared.data(for: request)
+
         guard let http = response as? HTTPURLResponse else {
             throw ConsoleAPIError.invalidResponse
         }
