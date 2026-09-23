@@ -6,58 +6,86 @@ struct HandleSetupView: View {
     @State private var errorText: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer()
+        GeometryReader { proxy in
+            ZStack {
+                ConsoleBackdrop()
 
-            Text("> IDENTITY INITIALIZED")
-                .font(.console(12, weight: .bold))
-                .foregroundStyle(ConsoleTheme.accent)
+                ScrollView {
+                    VStack {
+                        Spacer(minLength: proxy.size.height > 760 ? 90 : 34)
 
-            Text("PUBLIC\nHANDLE")
-                .font(.console(44, weight: .black))
-                .tracking(-1.8)
-                .foregroundStyle(ConsoleTheme.text)
-                .padding(.top, 18)
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack {
+                                ConsoleStatusPill(text: "IDENTITY INITIALIZED")
+                                Spacer()
+                                Text("02/02")
+                                    .font(.console(8, weight: .black))
+                                    .foregroundStyle(ConsoleTheme.muted)
+                            }
 
-            Text("Handle нужен только для обнаружения в Network.\nTerminal привязывается к Node ID, а не к имени.")
-                .font(.console(13))
-                .foregroundStyle(ConsoleTheme.secondary)
-                .lineSpacing(5)
-                .padding(.top, 16)
+                            Text("PUBLIC\nHANDLE")
+                                .font(.consoleDisplay(proxy.size.width < 500 ? 42 : 54, weight: .heavy))
+                                .tracking(-1.7)
+                                .foregroundStyle(ConsoleTheme.text)
+                                .padding(.top, 36)
 
-            ConsoleField(prompt: "handle", text: $handle)
-                .padding(.top, 30)
+                            Text("Handle используется для обнаружения в Network. Terminal привязывается к Node ID, а не к отображаемому имени.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(ConsoleTheme.secondary)
+                                .lineSpacing(5)
+                                .padding(.top, 18)
+                                .frame(maxWidth: 580, alignment: .leading)
 
-            Text("@\(ConsoleSession.normalizeHandle(handle))")
-                .font(.console(11, weight: .bold))
-                .foregroundStyle(ConsoleTheme.muted)
-                .padding(.top, 10)
+                            ConsoleWindowCard(title: "identity.handle") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ConsoleField(prompt: "handle", text: $handle)
 
-            if session.api.baseURL == nil {
-                Text("СЕТЬ НЕ НАСТРОЕНА · HANDLE БУДЕТ СОХРАНЁН ЛОКАЛЬНО")
-                    .font(.console(9, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.warning)
-                    .padding(.top, 18)
-            }
+                                    HStack {
+                                        Text("@\(ConsoleSession.normalizeHandle(handle))")
+                                            .font(.console(10, weight: .black))
+                                            .foregroundStyle(ConsoleTheme.accent)
+                                        Spacer()
+                                        Text("3–24 // a-z 0-9 _")
+                                            .font(.console(7.5, weight: .bold))
+                                            .foregroundStyle(ConsoleTheme.muted)
+                                    }
 
-            if let errorText {
-                Text(errorText)
-                    .font(.console(10, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.destructive)
-                    .padding(.top, 16)
-            }
+                                    if session.api.baseURL == nil {
+                                        ConsoleSystemLine(text: "СЕТЬ НЕ НАСТРОЕНА", tone: .warning)
+                                    }
 
-            Spacer()
+                                    if let errorText {
+                                        ConsoleSystemLine(text: errorText, tone: .error)
+                                    }
+                                }
+                            }
+                            .padding(.top, 30)
 
-            ConsolePrimaryButton(
-                title: session.networkBusy ? "ПРОВЕРКА..." : "ЗАФИКСИРОВАТЬ HANDLE",
-                disabled: session.networkBusy || !ConsoleSession.isValidHandle(ConsoleSession.normalizeHandle(handle))
-            ) {
-                claim()
+                            ConsolePrimaryButton(
+                                title: session.networkBusy ? "ПРОВЕРКА..." : "ЗАФИКСИРОВАТЬ HANDLE",
+                                disabled: session.networkBusy || !ConsoleSession.isValidHandle(ConsoleSession.normalizeHandle(handle))
+                            ) {
+                                claim()
+                            }
+                            .padding(.top, 18)
+                        }
+                        .padding(26)
+                        .background(ConsoleTheme.backgroundRaised.opacity(0.76))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(ConsoleTheme.line, lineWidth: 1)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .frame(maxWidth: 720)
+                        .padding(.horizontal, 18)
+
+                        Spacer(minLength: 34)
+                    }
+                    .frame(minHeight: proxy.size.height)
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 24)
     }
 
     private func claim() {

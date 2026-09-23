@@ -7,54 +7,95 @@ struct InitializeIdentityView: View {
     @State private var errorText: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer()
+        GeometryReader { proxy in
+            ZStack {
+                ConsoleBackdrop()
 
-            Text("> CONSOLE")
-                .font(.console(13, weight: .bold))
-                .foregroundStyle(ConsoleTheme.accent)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: proxy.size.height > 760 ? 90 : 34)
 
-            Text("IDENTITY\nREQUIRED")
-                .font(.console(46, weight: .black))
-                .tracking(-2)
-                .foregroundStyle(ConsoleTheme.text)
-                .padding(.top, 18)
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack {
+                                ConsoleStatusPill(text: "IDENTITY PROTOCOL")
+                                Spacer()
+                                Text("01/02")
+                                    .font(.console(8, weight: .black))
+                                    .foregroundStyle(ConsoleTheme.muted)
+                            }
 
-            Text("Создайте локальную Identity.\nЗакрытый ключ останется на этом устройстве.")
-                .font(.console(14, weight: .medium))
-                .foregroundStyle(ConsoleTheme.secondary)
-                .lineSpacing(6)
-                .padding(.top, 18)
+                            Text("> CONSOLE")
+                                .font(.console(12, weight: .black))
+                                .foregroundStyle(ConsoleTheme.accent)
+                                .padding(.top, 36)
 
-            if !lines.isEmpty {
-                VStack(alignment: .leading, spacing: 9) {
-                    ForEach(lines, id: \.self) { line in
-                        Text(line)
-                            .font(.console(11, weight: .bold))
-                            .foregroundStyle(ConsoleTheme.accent)
+                            Text("IDENTITY\nREQUIRED")
+                                .font(.consoleDisplay(proxy.size.width < 500 ? 42 : 54, weight: .heavy))
+                                .tracking(-1.8)
+                                .foregroundStyle(ConsoleTheme.text)
+                                .padding(.top, 12)
+
+                            Text("Создайте локальную Identity. Закрытый ключ будет сформирован и сохранён на этом устройстве.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(ConsoleTheme.secondary)
+                                .lineSpacing(5)
+                                .padding(.top, 18)
+                                .frame(maxWidth: 560, alignment: .leading)
+
+                            ConsoleWindowCard(title: "identity.init") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ConsoleSystemLine(text: "local identity initialization", tone: .normal)
+
+                                    if lines.isEmpty {
+                                        Text("ОЖИДАНИЕ КОМАНДЫ")
+                                            .font(.console(9, weight: .black))
+                                            .foregroundStyle(ConsoleTheme.muted)
+                                    } else {
+                                        ForEach(lines, id: \.self) { line in
+                                            Text(line)
+                                                .font(.console(10, weight: .bold))
+                                                .foregroundStyle(ConsoleTheme.accent)
+                                        }
+                                    }
+
+                                    if let errorText {
+                                        ConsoleSystemLine(text: errorText, tone: .error)
+                                    }
+                                }
+                                .frame(minHeight: 94, alignment: .topLeading)
+                            }
+                            .padding(.top, 30)
+
+                            ConsolePrimaryButton(
+                                title: running ? "ИНИЦИАЛИЗАЦИЯ..." : "ИНИЦИАЛИЗИРОВАТЬ ЛИЧНОСТЬ",
+                                disabled: running
+                            ) {
+                                initialize()
+                            }
+                            .padding(.top, 18)
+
+                            Text("SECURITY NOTE // E2EE ЕЩЁ НЕ АКТИВИРОВАНО В ЭТОЙ СБОРКЕ")
+                                .font(.console(7.5, weight: .black))
+                                .foregroundStyle(ConsoleTheme.warning)
+                                .padding(.top, 15)
+                        }
+                        .padding(26)
+                        .background(ConsoleTheme.backgroundRaised.opacity(0.76))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .stroke(ConsoleTheme.line, lineWidth: 1)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                        .frame(maxWidth: 720)
+                        .padding(.horizontal, 18)
+
+                        Spacer(minLength: 34)
                     }
+                    .frame(minHeight: proxy.size.height)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.top, 28)
-            }
-
-            if let errorText {
-                Text(errorText)
-                    .font(.console(11, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.destructive)
-                    .padding(.top, 20)
-            }
-
-            Spacer()
-
-            ConsolePrimaryButton(
-                title: running ? "ИНИЦИАЛИЗАЦИЯ..." : "ИНИЦИАЛИЗИРОВАТЬ ЛИЧНОСТЬ",
-                disabled: running
-            ) {
-                initialize()
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 24)
     }
 
     private func initialize() {

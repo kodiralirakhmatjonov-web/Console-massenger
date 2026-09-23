@@ -10,43 +10,59 @@ struct NetworkView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                ConsoleBackdrop()
+            GeometryReader { proxy in
+                ZStack {
+                    ConsoleBackdrop()
 
-                ScrollView {
-                    VStack(spacing: 14) {
-                        ConsoleHeader(
-                            path: "console://network",
-                            title: "Network",
-                            trailing: networkLabel
-                        )
+                    ScrollView {
+                        VStack(spacing: 18) {
+                            ConsoleHeader(
+                                path: "console://network",
+                                title: "Network",
+                                trailing: networkLabel
+                            )
 
-                        ConsoleMetricStrip(metrics: [
-                            ("INCOMING", String(format: "%02d", session.incomingHandshakes.count), session.incomingHandshakes.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent),
-                            ("OUTGOING", String(format: "%02d", session.outgoingHandshakes.count), ConsoleTheme.text),
-                            ("MATCHES", String(format: "%02d", results.count), results.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent)
-                        ])
+                            ConsoleMetricStrip(metrics: [
+                                ("INCOMING", String(format: "%02d", session.incomingHandshakes.count), session.incomingHandshakes.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent),
+                                ("OUTGOING", String(format: "%02d", session.outgoingHandshakes.count), ConsoleTheme.text),
+                                ("MATCHES", String(format: "%02d", results.count), results.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent)
+                            ])
 
-                        searchPanel
-                        requestPanel
-                        resultPanel
+                            if proxy.size.width >= 860 {
+                                HStack(alignment: .top, spacing: 14) {
+                                    VStack(spacing: 14) {
+                                        searchPanel
+                                        resultPanel
+                                    }
+                                    .frame(maxWidth: .infinity)
 
-                        if let lastNotice {
-                            ConsoleSystemLine(text: lastNotice, tone: .success)
-                                .padding(.horizontal, 2)
+                                    requestPanel
+                                        .frame(maxWidth: .infinity)
+                                }
+                            } else {
+                                searchPanel
+                                requestPanel
+                                resultPanel
+                            }
+
+                            if let lastNotice {
+                                ConsoleSystemLine(text: lastNotice, tone: .success)
+                                    .padding(.horizontal, 2)
+                            }
+
+                            if let errorText {
+                                ConsoleSystemLine(text: errorText, tone: .error)
+                                    .padding(.horizontal, 2)
+                            }
                         }
-
-                        if let errorText {
-                            ConsoleSystemLine(text: errorText, tone: .error)
-                                .padding(.horizontal, 2)
-                        }
+                        .consolePageFrame()
+                        .padding(.horizontal, proxy.size.width >= 760 ? 28 : 14)
+                        .padding(.top, proxy.size.width >= 760 ? 26 : 16)
+                        .padding(.bottom, 34)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 16)
-                    .padding(.bottom, 30)
-                }
-                .refreshable {
-                    await session.refreshNetwork()
+                    .refreshable {
+                        await session.refreshNetwork()
+                    }
                 }
             }
             .navigationDestination(for: HandshakeRequest.self) { request in
@@ -63,8 +79,14 @@ struct NetworkView: View {
 
     private var searchPanel: some View {
         ConsoleWindowCard(title: "scan@network:~") {
-            VStack(alignment: .leading, spacing: 12) {
-                ConsoleSystemLine(text: searching ? "scanning identity registry..." : "scanner awaiting target", tone: searching ? .warning : .normal)
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    ConsoleSystemLine(
+                        text: searching ? "scanning identity registry..." : "scanner awaiting target",
+                        tone: searching ? .warning : .normal
+                    )
+                    Spacer(minLength: 0)
+                }
 
                 ConsoleField(prompt: "@handle или node_id", text: $query)
                     .onSubmit { performSearch() }
@@ -94,11 +116,16 @@ struct NetworkView: View {
 
                     HStack(spacing: 5) {
                         Image(systemName: "qrcode.viewfinder")
-                        Text("QR")
+                        Text("QR READY")
                     }
-                    .font(.console(9, weight: .bold))
+                    .font(.console(8, weight: .bold))
                     .foregroundStyle(ConsoleTheme.muted)
                 }
+
+                Text("HANDSHAKE защищает Terminal от прямых входящих сообщений: незнакомый узел сначала запрашивает доступ.")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(ConsoleTheme.secondary)
+                    .lineSpacing(3)
             }
         }
     }
@@ -112,13 +139,21 @@ struct NetworkView: View {
 
             if session.incomingHandshakes.isEmpty {
                 ConsoleCard {
-                    HStack(spacing: 10) {
-                        ConsoleStatusDot(active: false)
-                        Text("ВХОДЯЩИХ ЗАПРОСОВ НЕТ")
-                            .font(.console(10, weight: .black))
-                            .foregroundStyle(ConsoleTheme.secondary)
-                        Spacer()
-                        Text("IDLE")
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 10) {
+                            ConsoleStatusDot(active: false)
+                            Text("ВХОДЯЩИХ ЗАПРОСОВ НЕТ")
+                                .font(.console(10, weight: .black))
+                                .foregroundStyle(ConsoleTheme.secondary)
+                            Spacer()
+                            Text("IDLE")
+                                .font(.console(8, weight: .black))
+                                .foregroundStyle(ConsoleTheme.muted)
+                        }
+
+                        Rectangle().fill(ConsoleTheme.line).frame(height: 1)
+
+                        Text("NETWORK LISTENER ACTIVE")
                             .font(.console(8, weight: .black))
                             .foregroundStyle(ConsoleTheme.muted)
                     }
@@ -126,24 +161,12 @@ struct NetworkView: View {
             } else {
                 ForEach(session.incomingHandshakes) { request in
                     NavigationLink(value: request) {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(ConsoleTheme.accent.opacity(0.07))
-                                    .frame(width: 39, height: 39)
-                                    .overlay {
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .stroke(ConsoleTheme.lineGreen, lineWidth: 1)
-                                    }
-
-                                Image(systemName: "link")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(ConsoleTheme.accent)
-                            }
+                        HStack(spacing: 13) {
+                            ConsoleNodeGlyph()
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("@\(request.peer?.handle ?? request.fromNode)")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .font(.consoleDisplay(15, weight: .bold))
                                     .foregroundStyle(ConsoleTheme.text)
                                 Text("ПОПЫТКА ПОДКЛЮЧЕНИЯ")
                                     .font(.console(8.5, weight: .black))
@@ -152,23 +175,27 @@ struct NetworkView: View {
 
                             Spacer()
 
-                            Text("REVIEW")
-                                .font(.console(8, weight: .black))
-                                .foregroundStyle(ConsoleTheme.muted)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text("REVIEW")
+                                    .font(.console(8, weight: .black))
+                                    .foregroundStyle(ConsoleTheme.muted)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(ConsoleTheme.accent)
+                            }
                         }
-                        .padding(13)
+                        .padding(14)
                         .background(ConsoleTheme.surface)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(ConsoleTheme.lineGreen, lineWidth: 1)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
-        .padding(.top, 2)
     }
 
     @ViewBuilder
@@ -179,8 +206,10 @@ struct NetworkView: View {
 
                 ForEach(results) { identity in
                     ConsoleWindowCard(title: "identity://\(identity.handle)") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
+                        VStack(alignment: .leading, spacing: 13) {
+                            HStack(spacing: 12) {
+                                ConsoleNodeGlyph(active: !isSelf(identity))
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("@\(identity.handle)")
                                         .font(.consoleDisplay(18, weight: .bold))
@@ -192,7 +221,7 @@ struct NetworkView: View {
 
                                 Spacer()
 
-                                ConsoleStatusPill(text: "DISCOVERED")
+                                ConsoleStatusPill(text: isSelf(identity) ? "LOCAL" : "DISCOVERED")
                             }
 
                             Rectangle().fill(ConsoleTheme.line).frame(height: 1)
@@ -212,7 +241,7 @@ struct NetworkView: View {
                                 ConsoleSystemLine(text: "ЭТО ВАШ УЗЕЛ", tone: .warning)
                                     .padding(.top, 2)
                             } else {
-                                ConsoleCommandButton(title: "УСТАНОВИТЬ СОЕДИНЕНИЕ") {
+                                ConsolePrimaryButton(title: "УСТАНОВИТЬ СОЕДИНЕНИЕ") {
                                     requestConnection(identity)
                                 }
                                 .padding(.top, 2)
@@ -221,10 +250,8 @@ struct NetworkView: View {
                     }
                 }
             }
-            .padding(.top, 2)
         }
     }
-
 
     private var networkLabel: String {
         if session.api.baseURL == nil { return "OFFLINE" }

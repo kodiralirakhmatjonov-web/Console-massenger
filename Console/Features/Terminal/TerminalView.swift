@@ -16,28 +16,25 @@ struct TerminalView: View {
     private let messageStore = LocalMessageStore.shared
 
     var body: some View {
-        ZStack {
-            ConsoleTheme.background.ignoresSafeArea()
+        GeometryReader { proxy in
+            ZStack {
+                ConsoleBackdrop()
 
-            VStack(spacing: 0) {
-                header
+                if proxy.size.width >= 1040 {
+                    HStack(alignment: .top, spacing: 16) {
+                        conversation(maxBubbleWidth: 640)
+                            .frame(maxWidth: 760)
 
-                Rectangle()
-                    .fill(ConsoleTheme.line)
-                    .frame(height: 1)
-
-                messageList
-
-                if let errorText {
-                    Text(errorText)
-                        .font(.console(9, weight: .bold))
-                        .foregroundStyle(ConsoleTheme.warning)
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        inspector
+                            .frame(width: 270)
+                    }
+                    .padding(22)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    conversation(maxBubbleWidth: proxy.size.width >= 700 ? 610 : 430)
+                        .frame(maxWidth: 820)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-
-                composer
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -62,30 +59,63 @@ struct TerminalView: View {
         }
     }
 
+    private func conversation(maxBubbleWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            header
+
+            Rectangle()
+                .fill(ConsoleTheme.line)
+                .frame(height: 1)
+
+            messageList(maxBubbleWidth: maxBubbleWidth)
+
+            if let errorText {
+                ConsoleSystemLine(text: errorText, tone: .warning)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(ConsoleTheme.warning.opacity(0.035))
+            }
+
+            composer
+        }
+        .background(ConsoleTheme.backgroundRaised.opacity(0.80))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(ConsoleTheme.line, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(12)
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(ConsoleTheme.text)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 36, height: 36)
                     .background(ConsoleTheme.surface)
+                    .overlay {
+                        Circle().stroke(ConsoleTheme.line, lineWidth: 1)
+                    }
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("console://terminal/@\(terminal.peer.handle)")
-                    .font(.console(11, weight: .bold))
+            ConsoleNodeGlyph(active: socket.status == .connected)
+                .frame(width: 38, height: 38)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("@\(terminal.peer.handle)")
+                    .font(.consoleDisplay(16, weight: .bold))
                     .foregroundStyle(ConsoleTheme.text)
 
                 HStack(spacing: 6) {
                     ConsoleStatusDot(active: socket.status == .connected)
-
                     Text(statusText)
-                        .font(.console(8, weight: .bold))
+                        .font(.console(8, weight: .black))
                         .foregroundStyle(socket.status == .connected ? ConsoleTheme.accent : ConsoleTheme.muted)
                 }
             }
@@ -93,41 +123,47 @@ struct TerminalView: View {
             Spacer()
 
             if queuedCount > 0 {
-                Text(String(format: "QUEUE %02d", queuedCount))
-                    .font(.console(8, weight: .bold))
-                    .foregroundStyle(ConsoleTheme.warning)
+                ConsoleStatusPill(text: String(format: "QUEUE %02d", queuedCount), active: false)
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 15)
         .padding(.vertical, 12)
+        .background(ConsoleTheme.surfaceGreen.opacity(0.35))
     }
 
-    private var messageList: some View {
+    private func messageList(maxBubbleWidth: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 10) {
-                    VStack(spacing: 5) {
-                        Text("> ТЕРМИНАЛ АКТИВЕН")
-                            .font(.console(9, weight: .bold))
-                            .foregroundStyle(ConsoleTheme.accent)
+                LazyVStack(spacing: 11) {
+                    VStack(spacing: 6) {
+                        Text("console://terminal/@\(terminal.peer.handle)")
+                            .font(.console(8.5, weight: .black))
+                            .foregroundStyle(ConsoleTheme.muted)
 
-                        Text("E2EE: НЕ АКТИВИРОВАНО")
-                            .font(.console(8, weight: .bold))
-                            .foregroundStyle(ConsoleTheme.warning)
+                        HStack(spacing: 7) {
+                            Text("> CHANNEL READY")
+                                .foregroundStyle(ConsoleTheme.accent)
+                            Text("//")
+                                .foregroundStyle(ConsoleTheme.muted)
+                            Text("E2EE OFF")
+                                .foregroundStyle(ConsoleTheme.warning)
+                        }
+                        .font(.console(8, weight: .black))
                     }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 17)
 
                     ForEach(messages) { message in
                         MessageBubble(
                             message: message,
-                            isMine: message.senderNode == session.identity?.nodeID
+                            isMine: message.senderNode == session.identity?.nodeID,
+                            maxWidth: maxBubbleWidth
                         )
                         .id(message.id)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
             .onChange(of: messages.count) { _, _ in
                 guard let last = messages.last else { return }
@@ -144,18 +180,25 @@ struct TerminalView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("ввод...", text: $draft, axis: .vertical)
-                .lineLimit(1...5)
-                .font(.console(14))
-                .foregroundStyle(ConsoleTheme.text)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 13)
-                .background(ConsoleTheme.surface)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(ConsoleTheme.line, lineWidth: 1)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+            HStack(alignment: .bottom, spacing: 9) {
+                Text(">")
+                    .font(.console(13, weight: .black))
+                    .foregroundStyle(ConsoleTheme.accent)
+                    .padding(.bottom, 2)
+
+                TextField("ввод...", text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .font(.console(13))
+                    .foregroundStyle(ConsoleTheme.text)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(ConsoleTheme.surface)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(ConsoleTheme.lineGreen.opacity(0.65), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Button {
                 send()
@@ -163,20 +206,63 @@ struct TerminalView: View {
                 Image(systemName: socket.status == .connected ? "arrow.up" : "tray.and.arrow.up")
                     .font(.system(size: 15, weight: .black))
                     .foregroundStyle(.black)
-                    .frame(width: 46, height: 46)
+                    .frame(width: 47, height: 47)
                     .background(ConsoleTheme.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(ConsoleTheme.line)
-                .frame(height: 1)
+            Rectangle().fill(ConsoleTheme.line).frame(height: 1)
+        }
+    }
+
+    private var inspector: some View {
+        VStack(spacing: 12) {
+            ConsoleWindowCard(title: "terminal.inspect") {
+                VStack(alignment: .leading, spacing: 13) {
+                    ConsoleSystemLine(text: "terminal mounted", tone: .success)
+                    inspectRow("HANDLE", "@\(terminal.peer.handle)")
+                    inspectRow("NODE", terminal.peer.nodeID)
+                    inspectRow("FINGERPRINT", terminal.peer.fingerprint)
+                    Rectangle().fill(ConsoleTheme.line).frame(height: 1)
+                    inspectRow("TRANSPORT", "REALTIME V1")
+                    inspectRow("E2EE", "NOT ACTIVE", color: ConsoleTheme.warning)
+                }
+            }
+
+            ConsoleCard {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("SESSION PROTOCOL")
+                        .font(.console(8, weight: .black))
+                        .foregroundStyle(ConsoleTheme.muted)
+                    Text("Сообщения передаются через текущий realtime transport. Криптографический защищённый канал ещё не заявляется.")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ConsoleTheme.secondary)
+                        .lineSpacing(3)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    private func inspectRow(_ key: String, _ value: String, color: Color = ConsoleTheme.secondary) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(key)
+                .font(.console(7.5, weight: .black))
+                .foregroundStyle(ConsoleTheme.muted)
+            Text(value)
+                .font(.console(9, weight: .bold))
+                .foregroundStyle(color)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+                .textSelection(.enabled)
         }
     }
 
@@ -412,40 +498,58 @@ struct TerminalView: View {
 private struct MessageBubble: View {
     let message: TerminalMessage
     let isMine: Bool
+    let maxWidth: CGFloat
 
     var body: some View {
-        HStack {
-            if isMine { Spacer(minLength: 46) }
+        HStack(alignment: .bottom) {
+            if isMine { Spacer(minLength: 58) }
 
-            VStack(alignment: .leading, spacing: 7) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(message.content)
-                    .font(.system(size: 15, weight: .regular, design: .monospaced))
+                    .font(.system(size: 14, weight: .regular, design: .monospaced))
                     .foregroundStyle(ConsoleTheme.text)
                     .textSelection(.enabled)
 
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Text(shortTime)
-                        .font(.console(8, weight: .medium))
+                        .font(.console(7.5, weight: .medium))
                         .foregroundStyle(ConsoleTheme.muted)
 
                     if isMine {
+                        Text("//")
+                            .font(.console(7, weight: .black))
+                            .foregroundStyle(ConsoleTheme.muted)
                         Text(deliveryText)
-                            .font(.console(8, weight: .bold))
+                            .font(.console(7.5, weight: .black))
                             .foregroundStyle(deliveryColor)
                     }
                 }
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
-            .background(isMine ? ConsoleTheme.accent.opacity(0.10) : ConsoleTheme.surface)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .background(
+                isMine
+                ? LinearGradient(
+                    colors: [ConsoleTheme.accent.opacity(0.115), ConsoleTheme.surfaceGreen.opacity(0.78)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                : LinearGradient(
+                    colors: [ConsoleTheme.surfaceRaised, ConsoleTheme.surface],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .overlay {
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(isMine ? ConsoleTheme.accent.opacity(0.24) : ConsoleTheme.line, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(isMine ? ConsoleTheme.lineGreen : ConsoleTheme.line, lineWidth: 1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
 
-            if !isMine { Spacer(minLength: 46) }
+            if !isMine { Spacer(minLength: 58) }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var deliveryText: String {
@@ -454,7 +558,7 @@ private struct MessageBubble: View {
         case .sending: return "ПЕРЕДАЧА"
         case .sent: return "ОТПРАВЛЕНО"
         case .delivered: return "ДОСТАВЛЕНО"
-        case .read: return "ПРОЧИТАНО"
+        case .read: return "ВЫВОД ПОДТВЕРЖДЁН"
         case .failed: return "ОШИБКА"
         }
     }
