@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 struct ConsoleActivityEvent: Identifiable, Equatable {
     enum Kind: Equatable {
@@ -290,6 +291,11 @@ final class ConsoleSession: ObservableObject {
                 kind: .message,
                 title: "НОВЫЕ ДАННЫЕ",
                 detail: "@\(changed.peer.handle) // активность терминала"
+            )
+            ConsoleNotifications.shared.postLocal(
+                title: "Console • новые данные",
+                body: "Активность в терминале @\(changed.peer.handle)",
+                category: "console.message"
             )
         }
     }

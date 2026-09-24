@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 struct SettingsView: View {
@@ -140,7 +141,7 @@ struct SettingsView: View {
 
                 settingsValueRow(title: "Узел", value: session.identity?.nodeID ?? "—")
                 settingsValueRow(title: "Отпечаток", value: session.identity?.fingerprint ?? "—")
-                settingsValueRow(title: "Сервер", value: session.endpointStore.value?.host() ?? "не задан")
+                settingsValueRow(title: "Сервер", value: session.endpointStore.value?.host ?? "не задан")
 
                 HStack(spacing: 12) {
                     ConsoleCommandButton(title: "КОПИРОВАТЬ NODE ID") {
@@ -196,7 +197,7 @@ struct SettingsView: View {
                     icon: "hand.raised.circle.fill",
                     color: ConsoleTheme.secondary,
                     title: "Системный доступ",
-                    value: notifications.authorizationStatusText
+                    value: notifications.statusTitle
                 )
 
                 if let notificationMessage {

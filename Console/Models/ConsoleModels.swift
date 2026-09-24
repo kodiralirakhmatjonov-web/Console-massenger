@@ -202,3 +202,29 @@ struct HandshakeDecisionResponse: Codable {
     let state: String
     let terminal: TerminalSummary?
 }
+
+struct PushRegistrationRequest: Codable {
+    let nodeID: String
+    let token: String
+    let platform: String
+    let previews: Bool
+    let sound: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case nodeID = "node_id"
+        case token
+        case platform
+        case previews
+        case sound
+    }
+}
+
+struct PushRegistrationResponse: Codable {
+    let ok: Bool
+    let pushConfigured: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case pushConfigured = "push_configured"
+    }
+}

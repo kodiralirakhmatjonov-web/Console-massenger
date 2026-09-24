@@ -136,6 +136,39 @@ final class ConsoleAPI {
         return response.messages
     }
 
+    func registerPushToken(
+        nodeID: String,
+        token: String,
+        previews: Bool,
+        sound: Bool
+    ) async throws -> PushRegistrationResponse {
+        let body = PushRegistrationRequest(
+            nodeID: nodeID,
+            token: token,
+            platform: "apple",
+            previews: previews,
+            sound: sound
+        )
+        return try await send(path: "/v1/push/register", method: "POST", body: body)
+    }
+
+    func unregisterPushToken(nodeID: String, token: String) async throws -> PushRegistrationResponse {
+        struct Body: Codable {
+            let nodeID: String
+            let token: String
+
+            enum CodingKeys: String, CodingKey {
+                case nodeID = "node_id"
+                case token
+            }
+        }
+        return try await send(
+            path: "/v1/push/unregister",
+            method: "POST",
+            body: Body(nodeID: nodeID, token: token)
+        )
+    }
+
     func socketURL(terminalID: String, nodeID: String) throws -> URL {
         guard var components = URLComponents(
             url: try requireBaseURL().appending(path: "/v1/terminals/\(terminalID)/socket"),
