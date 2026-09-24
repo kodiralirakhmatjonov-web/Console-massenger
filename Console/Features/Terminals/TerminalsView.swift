@@ -2,48 +2,49 @@ import SwiftUI
 
 struct TerminalsView: View {
     @EnvironmentObject private var session: ConsoleSession
+    @AppStorage("console.interface.compactTerminalList") private var compactTerminalList = false
     let onOpenNetwork: () -> Void
 
+    @State private var activeTerminal: TerminalSummary?
+
     var body: some View {
-        NavigationStack {
-            GeometryReader { proxy in
-                ZStack {
-                    ConsoleBackdrop()
+        GeometryReader { proxy in
+            ZStack {
+                ConsoleBackdrop()
 
-                    ScrollView {
-                        VStack(spacing: 18) {
-                            ConsoleHeader(
-                                path: "console://terminals",
-                                title: "Терминалы",
-                                trailing: String(format: "%02d ACTIVE", session.terminals.count)
-                            )
+                ScrollView {
+                    VStack(spacing: 18) {
+                        ConsoleHeader(
+                            path: "console://terminals",
+                            title: "Терминалы",
+                            trailing: String(format: "%02d ACTIVE", session.terminals.count)
+                        )
 
-                            ConsoleMetricStrip(metrics: [
-                                ("CHANNELS", String(format: "%02d", session.terminals.count), session.terminals.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent),
-                                ("NETWORK", session.networkOnline ? "READY" : "IDLE", session.networkOnline ? ConsoleTheme.accent : ConsoleTheme.warning),
-                                ("E2EE", "OFF", ConsoleTheme.warning)
-                            ])
+                        ConsoleMetricStrip(metrics: [
+                            ("CHANNELS", String(format: "%02d", session.terminals.count), session.terminals.isEmpty ? ConsoleTheme.secondary : ConsoleTheme.accent),
+                            ("NETWORK", session.networkOnline ? "READY" : "IDLE", session.networkOnline ? ConsoleTheme.accent : ConsoleTheme.warning),
+                            ("E2EE", "OFF", ConsoleTheme.warning)
+                        ])
 
-                            if session.terminals.isEmpty {
-                                emptyState
-                            } else {
-                                terminalGrid(width: proxy.size.width)
-                            }
+                        if session.terminals.isEmpty {
+                            emptyState
+                        } else {
+                            terminalGrid(width: proxy.size.width)
                         }
-                        .consolePageFrame()
-                        .padding(.horizontal, proxy.size.width >= 760 ? 28 : 14)
-                        .padding(.top, proxy.size.width >= 760 ? 26 : 16)
-                        .padding(.bottom, 34)
                     }
-                    .refreshable {
-                        await session.refreshNetwork()
-                    }
+                    .consolePageFrame()
+                    .padding(.horizontal, proxy.size.width >= 760 ? 28 : 14)
+                    .padding(.top, proxy.size.width >= 760 ? 26 : 16)
+                    .padding(.bottom, 34)
+                }
+                .refreshable {
+                    await session.refreshNetwork()
                 }
             }
-            .navigationDestination(for: TerminalSummary.self) { terminal in
-                TerminalView(terminal: terminal)
-            }
-            .toolbar(.hidden, for: .navigationBar)
+        }
+        .fullScreenCover(item: $activeTerminal) { terminal in
+            TerminalView(terminal: terminal)
+                .environmentObject(session)
         }
     }
 
@@ -53,9 +54,11 @@ struct TerminalsView: View {
             ? [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
             : [GridItem(.flexible())]
 
-        LazyVGrid(columns: columns, spacing: 12) {
+        LazyVGrid(columns: columns, spacing: compactTerminalList ? 9 : 12) {
             ForEach(session.terminals) { terminal in
-                NavigationLink(value: terminal) {
+                Button {
+                    activeTerminal = terminal
+                } label: {
                     terminalRow(terminal)
                 }
                 .buttonStyle(.plain)
@@ -78,7 +81,7 @@ struct TerminalsView: View {
                     }
                 }
 
-                Text("Найдите узел в Network и инициируйте Handshake. Терминал появится только после разрешения второй стороны.")
+                Text("Найдите человека во вкладке Network и отправьте Handshake. Диалог откроется только после его разрешения.")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(ConsoleTheme.secondary)
                     .lineSpacing(4)
@@ -93,8 +96,8 @@ struct TerminalsView: View {
 
     private func terminalRow(_ terminal: TerminalSummary) -> some View {
         ConsoleCard {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 13) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: compactTerminalList ? 10 : 13) {
                     ConsoleNodeGlyph()
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -113,9 +116,22 @@ struct TerminalsView: View {
 
                     Spacer()
 
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .bold))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(ConsoleTheme.muted)
+                }
+
+                if let last = terminal.lastMessageAt,
+                   let date = ISO8601DateFormatter().date(from: last) {
+                    HStack {
+                        Text("ПОСЛЕДНЯЯ АКТИВНОСТЬ")
+                            .font(.console(7.5, weight: .black))
+                            .foregroundStyle(ConsoleTheme.muted)
+                        Spacer()
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(.console(8.5, weight: .bold))
+                            .foregroundStyle(ConsoleTheme.secondary)
+                    }
                 }
 
                 Rectangle().fill(ConsoleTheme.line).frame(height: 1)

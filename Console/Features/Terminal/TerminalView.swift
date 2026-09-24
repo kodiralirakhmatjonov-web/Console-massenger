@@ -5,6 +5,11 @@ struct TerminalView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
+    @AppStorage("console.effects.enabled") private var effectsEnabled = true
+    @AppStorage("console.effects.reduceMotion") private var reduceMotion = false
+    @AppStorage("console.notifications.previews") private var notificationPreviews = true
+    @AppStorage("console.interface.showProtocolHints") private var showProtocolHints = true
+
     let terminal: TerminalSummary
 
     @StateObject private var socket = ConsoleSocket()
@@ -12,34 +17,53 @@ struct TerminalView: View {
     @State private var draft = ""
     @State private var errorText: String?
     @State private var didLoadLocalState = false
+    @State private var activeEffect: ConsoleSimulationEffect?
 
     private let messageStore = LocalMessageStore.shared
 
     var body: some View {
         GeometryReader { proxy in
+            let wideInspector = proxy.size.width >= 1040
+            let compactScreen = proxy.size.width < 700
+            let regularBubbleWidth = min(proxy.size.width * 0.72, 640)
+            let compactBubbleWidth = min(max(proxy.size.width * 0.78, 240), 470)
+
             ZStack {
                 ConsoleBackdrop()
 
-                if proxy.size.width >= 1040 {
+                if wideInspector {
                     HStack(alignment: .top, spacing: 16) {
-                        conversation(maxBubbleWidth: 640)
-                            .frame(maxWidth: 760)
-
+                        regularConversation(maxBubbleWidth: regularBubbleWidth)
+                            .frame(maxWidth: 780)
                         inspector
-                            .frame(width: 270)
+                            .frame(width: 280)
                     }
                     .padding(22)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    conversation(maxBubbleWidth: proxy.size.width >= 700 ? 610 : 430)
-                        .frame(maxWidth: 820)
+                } else if compactScreen {
+                    compactConversation(maxBubbleWidth: compactBubbleWidth)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    regularConversation(maxBubbleWidth: regularBubbleWidth)
+                        .frame(maxWidth: 860, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                if let activeEffect {
+                    ConsoleSimulationOverlay(effect: activeEffect, reduceMotion: reduceMotion) {
+                        self.activeEffect = nil
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 1.03)))
+                    .zIndex(50)
                 }
             }
         }
         .toolbar(.hidden, for: .navigationBar)
         .task {
             await start()
+        }
+        .onAppear {
+            session.terminalFullscreenActive = true
         }
         .onChange(of: socket.status) { _, newStatus in
             guard newStatus == .connected else { return }
@@ -56,29 +80,21 @@ struct TerminalView: View {
         .onDisappear {
             persist()
             socket.disconnect()
+            session.terminalFullscreenActive = false
         }
     }
 
-    private func conversation(maxBubbleWidth: CGFloat) -> some View {
+    private func regularConversation(maxBubbleWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
-            header
-
-            Rectangle()
-                .fill(ConsoleTheme.line)
-                .frame(height: 1)
-
+            header(compact: false)
+            Rectangle().fill(ConsoleTheme.line).frame(height: 1)
             messageList(maxBubbleWidth: maxBubbleWidth)
-
             if let errorText {
-                ConsoleSystemLine(text: errorText, tone: .warning)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(ConsoleTheme.warning.opacity(0.035))
+                errorBanner(errorText)
             }
-
             composer
         }
-        .background(ConsoleTheme.backgroundRaised.opacity(0.80))
+        .background(ConsoleTheme.backgroundRaised.opacity(0.84))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(ConsoleTheme.line, lineWidth: 1)
@@ -87,15 +103,29 @@ struct TerminalView: View {
         .padding(12)
     }
 
-    private var header: some View {
+    private func compactConversation(maxBubbleWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            header(compact: true)
+            Rectangle().fill(ConsoleTheme.line).frame(height: 1)
+            messageList(maxBubbleWidth: maxBubbleWidth)
+            if let errorText {
+                errorBanner(errorText)
+            }
+            composer
+        }
+        .background(ConsoleTheme.backgroundRaised.opacity(0.97))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func header(compact: Bool) -> some View {
         HStack(spacing: 12) {
             Button {
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(ConsoleTheme.text)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 38, height: 38)
                     .background(ConsoleTheme.surface)
                     .overlay {
                         Circle().stroke(ConsoleTheme.line, lineWidth: 1)
@@ -105,17 +135,18 @@ struct TerminalView: View {
             .buttonStyle(.plain)
 
             ConsoleNodeGlyph(active: socket.status == .connected)
-                .frame(width: 38, height: 38)
+                .frame(width: compact ? 42 : 40, height: compact ? 42 : 40)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("@\(terminal.peer.handle)")
-                    .font(.consoleDisplay(16, weight: .bold))
+                    .font(.system(size: compact ? 24 : 18, weight: .bold, design: .rounded))
                     .foregroundStyle(ConsoleTheme.text)
+                    .lineLimit(1)
 
                 HStack(spacing: 6) {
                     ConsoleStatusDot(active: socket.status == .connected)
                     Text(statusText)
-                        .font(.console(8, weight: .black))
+                        .font(.console(compact ? 8.5 : 8, weight: .black))
                         .foregroundStyle(socket.status == .connected ? ConsoleTheme.accent : ConsoleTheme.muted)
                 }
             }
@@ -126,32 +157,44 @@ struct TerminalView: View {
                 ConsoleStatusPill(text: String(format: "QUEUE %02d", queuedCount), active: false)
             }
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 12)
-        .background(ConsoleTheme.surfaceGreen.opacity(0.35))
+        .padding(.horizontal, compact ? 16 : 15)
+        .padding(.top, compact ? 16 : 12)
+        .padding(.bottom, compact ? 14 : 12)
+        .background(ConsoleTheme.surfaceGreen.opacity(compact ? 0.30 : 0.35))
+    }
+
+    private func errorBanner(_ text: String) -> some View {
+        ConsoleSystemLine(text: text, tone: .warning)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(ConsoleTheme.warning.opacity(0.035))
     }
 
     private func messageList(maxBubbleWidth: CGFloat) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 11) {
-                    VStack(spacing: 6) {
-                        Text("console://terminal/@\(terminal.peer.handle)")
-                            .font(.console(8.5, weight: .black))
-                            .foregroundStyle(ConsoleTheme.muted)
-
-                        HStack(spacing: 7) {
-                            Text("> CHANNEL READY")
-                                .foregroundStyle(ConsoleTheme.accent)
-                            Text("//")
+                    if showProtocolHints {
+                        VStack(spacing: 6) {
+                            Text("console://terminal/@\(terminal.peer.handle)")
+                                .font(.console(8.5, weight: .black))
                                 .foregroundStyle(ConsoleTheme.muted)
-                            Text("E2EE OFF")
-                                .foregroundStyle(ConsoleTheme.warning)
+
+                            HStack(spacing: 7) {
+                                Text("> CHANNEL READY")
+                                    .foregroundStyle(ConsoleTheme.accent)
+                                Text("//")
+                                    .foregroundStyle(ConsoleTheme.muted)
+                                Text("REALTIME V1")
+                                    .foregroundStyle(ConsoleTheme.secondary)
+                            }
+                            .font(.console(8, weight: .black))
                         }
-                        .font(.console(8, weight: .black))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 17)
+                    } else {
+                        Color.clear.frame(height: 10)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 17)
 
                     ForEach(messages) { message in
                         MessageBubble(
@@ -162,7 +205,8 @@ struct TerminalView: View {
                         .id(message.id)
                     }
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
                 .padding(.bottom, 14)
             }
             .onChange(of: messages.count) { _, _ in
@@ -182,40 +226,44 @@ struct TerminalView: View {
         HStack(alignment: .bottom, spacing: 10) {
             HStack(alignment: .bottom, spacing: 9) {
                 Text(">")
-                    .font(.console(13, weight: .black))
+                    .font(.console(14, weight: .black))
                     .foregroundStyle(ConsoleTheme.accent)
                     .padding(.bottom, 2)
 
-                TextField("ввод...", text: $draft, axis: .vertical)
+                TextField("Сообщение", text: $draft, axis: .vertical)
                     .lineLimit(1...5)
-                    .font(.console(13))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(ConsoleTheme.text)
+                    .tint(ConsoleTheme.accent)
+                    .submitLabel(.send)
+                    .onSubmit { send() }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(ConsoleTheme.surface)
+            .background(ConsoleTheme.fieldBackground)
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(ConsoleTheme.lineGreen.opacity(0.65), lineWidth: 1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             Button {
                 send()
             } label: {
                 Image(systemName: socket.status == .connected ? "arrow.up" : "tray.and.arrow.up")
-                    .font(.system(size: 15, weight: .black))
+                    .font(.system(size: 16, weight: .black))
                     .foregroundStyle(.black)
-                    .frame(width: 47, height: 47)
+                    .frame(width: 48, height: 48)
                     .background(ConsoleTheme.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 11)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) {
             Rectangle().fill(ConsoleTheme.line).frame(height: 1)
@@ -241,8 +289,8 @@ struct TerminalView: View {
                     Text("SESSION PROTOCOL")
                         .font(.console(8, weight: .black))
                         .foregroundStyle(ConsoleTheme.muted)
-                    Text("Сообщения передаются через текущий realtime transport. Криптографический защищённый канал ещё не заявляется.")
-                        .font(.system(size: 11, weight: .medium))
+                    Text("Чат получил более читаемый полноэкранный режим. Для Console FX отправьте /hacked, /panic, /trace, /breach, /ghost или /wake.")
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(ConsoleTheme.secondary)
                         .lineSpacing(3)
                 }
@@ -302,7 +350,6 @@ struct TerminalView: View {
             persist()
             errorText = nil
         } catch {
-            // Local history remains available even when the network is down.
             errorText = "ИСТОРИЯ: ЛОКАЛЬНЫЙ РЕЖИМ"
         }
 
@@ -339,6 +386,7 @@ struct TerminalView: View {
         messages.append(local)
         draft = ""
         persist()
+        triggerEffectIfNeeded(content)
 
         guard socket.status == .connected else {
             errorText = "СЕТЬ НЕДОСТУПНА • СООБЩЕНИЕ В ОЧЕРЕДИ"
@@ -454,7 +502,19 @@ struct TerminalView: View {
             persist()
         }
 
-        guard senderNode != node, let eventID else { return }
+        guard senderNode != node else { return }
+
+        triggerEffectIfNeeded(content)
+        if scenePhase != .active {
+            let body = notificationPreviews ? "@\(terminal.peer.handle): \(content)" : "Новые данные в терминале @\(terminal.peer.handle)"
+            ConsoleNotifications.shared.postLocal(
+                title: "Console • новое сообщение",
+                body: body,
+                category: "console.message"
+            )
+        }
+
+        guard let eventID else { return }
         Task {
             try? await socket.sendDeliveryReceipt(eventID: eventID)
             if scenePhase == .active {
@@ -474,6 +534,19 @@ struct TerminalView: View {
             guard socket.status == .connected else { return }
             try? await socket.sendDeliveryReceipt(eventID: eventID)
             try? await socket.sendReadReceipt(eventID: eventID)
+        }
+    }
+
+    private func triggerEffectIfNeeded(_ content: String) {
+        guard effectsEnabled,
+              let effect = ConsoleSimulationEffect(command: content) else { return }
+        activeEffect = effect
+        Task {
+            let delay: UInt64 = reduceMotion ? 1_200_000_000 : 1_800_000_000
+            try? await Task.sleep(nanoseconds: delay)
+            await MainActor.run {
+                if activeEffect == effect { activeEffect = nil }
+            }
         }
     }
 
@@ -502,13 +575,14 @@ private struct MessageBubble: View {
 
     var body: some View {
         HStack(alignment: .bottom) {
-            if isMine { Spacer(minLength: 58) }
+            if isMine { Spacer(minLength: 54) }
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(message.content)
-                    .font(.system(size: 14, weight: .regular, design: .monospaced))
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundStyle(ConsoleTheme.text)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 7) {
                     Text(shortTime)
@@ -531,7 +605,7 @@ private struct MessageBubble: View {
             .background(
                 isMine
                 ? LinearGradient(
-                    colors: [ConsoleTheme.accent.opacity(0.115), ConsoleTheme.surfaceGreen.opacity(0.78)],
+                    colors: [ConsoleTheme.accent.opacity(0.11), ConsoleTheme.surfaceGreen.opacity(0.88)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
@@ -542,12 +616,12 @@ private struct MessageBubble: View {
                 )
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(isMine ? ConsoleTheme.lineGreen : ConsoleTheme.line, lineWidth: 1)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-            if !isMine { Spacer(minLength: 58) }
+            if !isMine { Spacer(minLength: 54) }
         }
         .frame(maxWidth: .infinity)
     }
@@ -558,7 +632,7 @@ private struct MessageBubble: View {
         case .sending: return "ПЕРЕДАЧА"
         case .sent: return "ОТПРАВЛЕНО"
         case .delivered: return "ДОСТАВЛЕНО"
-        case .read: return "ВЫВОД ПОДТВЕРЖДЁН"
+        case .read: return "ПРОЧИТАНО"
         case .failed: return "ОШИБКА"
         }
     }
@@ -575,5 +649,138 @@ private struct MessageBubble: View {
     private var shortTime: String {
         guard let date = ISO8601DateFormatter().date(from: message.createdAt) else { return "—" }
         return date.formatted(date: .omitted, time: .shortened)
+    }
+}
+
+private enum ConsoleSimulationEffect: String, CaseIterable, Identifiable {
+    case hacked = "/hacked"
+    case panic = "/panic"
+    case trace = "/trace"
+    case breach = "/breach"
+    case ghost = "/ghost"
+    case wake = "/wake"
+
+    init?(command: String) {
+        let normalized = command.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.init(rawValue: normalized)
+    }
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .hacked: return "ОБНАРУЖЕНО ВНЕШНЕЕ ВМЕШАТЕЛЬСТВО"
+        case .panic: return "АВАРИЙНЫЙ РЕЖИМ АКТИВИРОВАН"
+        case .trace: return "ЗАПУЩЕН АНАЛИЗ МАРШРУТА"
+        case .breach: return "НАРУШЕНИЕ ПЕРИМЕТРА"
+        case .ghost: return "РЕЖИМ ТЕНИ"
+        case .wake: return "СИГНАЛ ВНИМАНИЯ"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .hacked: return "СИМУЛЯЦИЯ • КАНАЛ НЕ ПОВРЕЖДЁН"
+        case .panic: return "СИМУЛЯЦИЯ • УТЕЧКИ НЕ ОБНАРУЖЕНО"
+        case .trace: return "СИМУЛЯЦИЯ • МАРШРУТ СКАНИРУЕТСЯ"
+        case .breach: return "СИМУЛЯЦИЯ • ИДЁТ ЛОКАЛЬНАЯ ПРОВЕРКА"
+        case .ghost: return "СИМУЛЯЦИЯ • ПРИСУТСТВИЕ ОГРАНИЧЕНО"
+        case .wake: return "СИМУЛЯЦИЯ • ПОЛЬЗОВАТЕЛЬ УВЕДОМЛЁН"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .hacked: return "exclamationmark.triangle.fill"
+        case .panic: return "bolt.horizontal.circle.fill"
+        case .trace: return "scope"
+        case .breach: return "shield.lefthalf.filled.badge.exclamationmark"
+        case .ghost: return "moon.stars.fill"
+        case .wake: return "bell.and.waves.left.and.right.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .hacked, .panic, .breach: return ConsoleTheme.warning
+        case .ghost: return ConsoleTheme.cyan
+        case .wake, .trace: return ConsoleTheme.accent
+        }
+    }
+}
+
+private struct ConsoleSimulationOverlay: View {
+    let effect: ConsoleSimulationEffect
+    let reduceMotion: Bool
+    let dismiss: () -> Void
+
+    @State private var phase = false
+
+    var body: some View {
+        ZStack {
+            ConsoleTheme.background.opacity(reduceMotion ? 0.72 : 0.86)
+                .ignoresSafeArea()
+                .onTapGesture(perform: dismiss)
+
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(effect.color.opacity(0.12))
+                        Image(systemName: effect.icon)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(effect.color)
+                    }
+                    .frame(width: 54, height: 54)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(effect.title)
+                            .font(.console(11, weight: .black))
+                            .foregroundStyle(ConsoleTheme.text)
+                        Text(effect.subtitle)
+                            .font(.console(8.5, weight: .bold))
+                            .foregroundStyle(effect.color)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    effectLine("> анализ сигнала")
+                    effectLine("> проверка канала")
+                    effectLine("> симуляция завершится автоматически")
+                }
+
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(ConsoleTheme.surface)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(effect.color)
+                            .frame(width: proxy.size.width * (phase ? 0.84 : 0.42))
+                    }
+                }
+                .frame(height: 12)
+            }
+            .padding(20)
+            .frame(maxWidth: 420)
+            .background(ConsoleTheme.backgroundRaised.opacity(0.96))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(effect.color.opacity(0.5), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: ConsoleTheme.shadow, radius: 28, y: 14)
+            .padding(24)
+        }
+        .onAppear {
+            withAnimation(reduceMotion ? .linear(duration: 0.25) : .easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                phase.toggle()
+            }
+        }
+    }
+
+    private func effectLine(_ text: String) -> some View {
+        Text(text)
+            .font(.console(9, weight: .bold))
+            .foregroundStyle(ConsoleTheme.secondary)
     }
 }
